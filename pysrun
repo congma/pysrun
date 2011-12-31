@@ -1,0 +1,132 @@
+#!/usr/bin/env python   
+"""A Python implementation of the SRUN 3000 internet tolling client.
+
+Usage: pysrun {login|logout}
+
+A separate configuration file, pysrun.cfg, should be present in the
+directory from which the program is started.
+
+This program is in the Public Domain.  You are free to use it and modify it.
+
+
+"""
+import sys
+import os.path
+import re
+import ConfigParser
+import urllib
+import urllib2
+import socket
+import fcntl
+import struct
+
+
+# Regexp for the returned "uid" used by the SRUN server.
+UIDRE = re.compile(r"[0-9a-zA-Z]+")  #FIXME: this is only a guess.
+
+
+def get_hwaddress(ifname):
+    """Returns a text representation of the HW address of an interface."""
+    # See: http://code.activestate.com/recipes/439094-get-the-ip-address-associated-with-a-network-inter/
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    info = fcntl.ioctl(s.fileno(), 0x8927, struct.pack('256s', ifname[:15]))
+    s.close()
+    return "".join(['%02x:' % ord(char) for char in info[18:24]])[:-1]
+
+
+def tamper_hwaddress(hwaddress):
+    # For whatever reason, we want to tamper the HW address.
+    # This may just be a bug of the SRUN client, but we decide to maintain
+    # maximal conformance, bug-to-bug.
+    return "ff:ff:%s" % hwaddress[6:]
+
+
+def read_uid(uid_path):
+    """Search in the uid_path file for the uid used to end a session.  Stop and
+    return on first match."""
+
+    fh = open(uid_path, "r")
+    for line in fh:
+        bline = line.strip()
+        if UIDRE.match(bline):
+            return bline
+    raise ValueError("No UID found in UID file: %s" % uid_path)
+
+
+def write_uid(uid, uid_path):
+    fh = open(uid_path, "w")
+    fh.truncate(0)
+    fh.write("%s\n" % uid)
+    fh.close()
+    return None
+
+
+def do_login(address, port, postdata):
+    """Performs the login action.  Returns the uid."""
+
+    url = "http://%s:%s/cgi-bin/do_login" % (address, port)
+    f = urllib2.urlopen(url, postdata)
+    uid = UIDRE.match(f.read()).group()
+    return uid
+
+
+def do_logout(address, port, postdata):
+    """Performs the logout action and display the returned message."""
+
+    url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
+    f = urllib2.urlopen(url, postdata)
+    for line in f:
+        print line
+    return None
+
+
+def login(config):
+    uname = config.get("Account", "username")
+    passwd = config.get("Account", "password")
+    ifname = config.get("Client", "interface")
+    address = config.get("Server", "address")
+    port = config.get("Server", "port")
+    fname = os.path.expanduser(config.get("Session", "uidfile"))
+
+    login_data = {"username": uname,
+        "password": passwd,
+        "drop": "0",
+        "type": "3",
+        "n": "99",
+        "mac": tamper_hwaddress(get_hwaddress(ifname))}
+    login_postdata = urllib.urlencode(login_data)
+
+    uid = do_login(address, port, login_postdata)
+    write_uid(uid, fname)
+
+    return None
+
+
+def logout(config):
+    fname = os.path.expanduser(config.get("Session", "uidfile"))
+    uid = read_uid(fname)
+
+    address = config.get("Server", "address")
+    port = config.get("Server", "port")
+
+    logout_data = {"uid": uid}
+    logout_postdata = urllib.urlencode(logout_data)
+
+    do_logout(address, port, logout_postdata)
+
+    return None
+
+
+if __name__ == "__main__":
+    op = sys.argv[1]
+    #FIXME: this shouldn't be hard-coded.
+    config_path = os.path.expanduser("~/.pysrun.cfg")
+    config = ConfigParser.RawConfigParser()
+    config.read(config_path)
+
+    if op == "login":
+        login(config)
+    elif op == "logout":
+        logout(config)
+    else:
+        sys.exit(2)

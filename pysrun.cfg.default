@@ -1,0 +1,13 @@
+[Server]
+address=172.16.202.201
+port=3333
+
+[Client]
+interface=eth0
+
+[Account]
+username=
+password=
+
+[Session]
+uidfile=~/.prun3000_uid
