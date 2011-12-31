@@ -3,8 +3,12 @@
 
 Usage: pysrun {login|logout}
 
-A separate configuration file, pysrun.cfg, should be present in the
-directory from which the program is started.
+Before starting the program, a configuration file must be saved at the
+path "~/.pysrun.cfg".  As of now, the path to config file is hard-coded.
+This is expected to be fixed in the future.
+
+The configuration file is used to store login credentials and run-time
+options.  An example config file is provided with the default settings.
 
 This program is in the Public Domain.  You are free to use it and modify it.
 
