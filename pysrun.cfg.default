@@ -10,4 +10,4 @@ username=
 password=
 
 [Session]
-uidfile=~/.prun3000_uid
+uidfile=~/.pysrun_uid
