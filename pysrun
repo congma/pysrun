@@ -20,9 +20,139 @@ import re
 import ConfigParser
 import urllib
 import urllib2
-import socket
-import fcntl
-import struct
+import platform
+from socket import AF_INET, AF_INET6, inet_ntop
+from ctypes import *
+
+
+def platformis(plat):
+    """Check whether plat matches the platform of the machine. The comparison
+    is case-insensitive.
+
+    """
+    # we are not using sys.platform because that info was written when
+    # Python is compiled, not run.
+    platformid = platform.system().lower()
+    return platformid.startswith(plat.lower())
+
+
+# Platform-specific initialization
+if platformis("linux"):
+    from socket import AF_PACKET    # Linux-ism link layer address family
+    af_link = AF_PACKET
+elif platformis("freebsd"):
+    af_link = 18                    # According to FreeBSD doc, this is AF_LINK
+else:
+    raise NotImplementedError, "Not implemented for %s" % platform.system()
+
+
+class ifa_ifu_u(Union):
+    _fields_ = [
+            ("ifu_broadaddr", c_void_p),
+            ("ifu_dstaddr", c_void_p)]
+
+
+# AF_UNKNOWN / generic
+if platformis("darwin") or platformis("freebsd"):
+    class sockaddr(Structure):
+        _fields_ = [
+                ("sa_len", c_uint8),
+                ("sa_family", c_uint8),
+                ("sa_data", (c_uint8 * 14))]
+else:
+    class sockaddr(Structure):
+        _fields_ = [
+                ("sa_family", c_uint16),
+                ("sa_data", (c_uint8 * 14))]
+
+
+# AF_PACKET / Linux
+class sockaddr_ll(Structure):
+    _fields_ = [
+            ("sll_family", c_ushort),
+            ("sll_protocol", c_uint16),
+            ("sll_ifindex", c_int),
+            ("sll_hatype", c_short),
+            ("sll_pkttype", c_uint8),
+            ("sll_halen", c_uint8),
+            ("sll_addr", (c_uint8 * 8))]
+
+    def __str__(self):
+        return ":".join(["%02x" % self.sll_addr[i]
+            for i in range(self.sll_halen)])
+
+
+# AF_LINK / BSD|OSX
+class sockaddr_dl(Structure):
+    _fields_ = [
+            ("sdl_len", c_uint8),
+            ("sdl_family", c_uint8),
+            ("sdl_index", c_ushort),
+            ("sdl_type", c_uint8),
+            ("sdl_nlen", c_uint8),
+            ("sdl_alen", c_uint8),
+            ("sdl_slen", c_uint8),
+            ("sdl_data", (c_uint8 * 46))]
+
+    def __str__(self):
+        assert self.sdl_len >= sizeof(sockaddr_dl)
+        addrdata = self.sdl_data[self.sdl_nlen : self.sdl_nlen
+                + self.sdl_alen]
+        return ":".join(["%02x" % x for x in addrdata])
+
+
+class ifaddrs(Structure):
+    _fields_ = [
+            ("ifa_next", c_void_p),
+            ("ifa_name", c_char_p),
+            ("ifa_flags", c_uint),
+            ("ifa_addr", c_void_p),
+            ("ifa_netmask", c_void_p),
+            ("ifa_ifu", ifa_ifu_u),
+            ("ifa_data", c_void_p)]
+
+
+def getmacaddrs():
+    """Returns a dictionary with each key being an interface name and
+    the value being a list of corresponding MAC addresses (possibly empty), in
+    textual representation.
+
+    This function calls the platform's getifaddrs() implementation.
+
+    """
+    libc = CDLL("libc.so.6")
+    ptr = c_void_p(None)
+    result = libc.getifaddrs(pointer(ptr))
+    if result != 0:
+        return None
+    ifa = ifaddrs.from_address(ptr.value)
+    result = {}
+
+    while True:
+        name = ifa.ifa_name
+        if name not in result:
+            result[name] = []
+
+        sa = sockaddr.from_address(ifa.ifa_addr)
+
+        if sa.sa_family == af_link:
+            if ifa.ifa_addr is not None:
+                if platformis("linux"):
+                    si = sockaddr_ll.from_address(ifa.ifa_addr)
+                elif platformis("freebsd"):
+                    si = sockaddr_dl.from_address(ifa.ifa_addr)
+                addr = "%s" % si
+                if addr:
+                    result[name].append(addr)
+
+        if ifa.ifa_next:
+            ifa = ifaddrs.from_address(ifa.ifa_next)
+        else:
+            break
+
+    libc.freeifaddrs(ptr)
+
+    return result
 
 
 # Regexp for the returned "uid" used by the SRUN server.
@@ -31,11 +161,16 @@ UIDRE = re.compile(r"[0-9a-zA-Z]+")  #FIXME: this is only a guess.
 
 def get_hwaddress(ifname):
     """Returns a text representation of the HW address of an interface."""
-    # See: http://code.activestate.com/recipes/439094-get-the-ip-address-associated-with-a-network-inter/
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    info = fcntl.ioctl(s.fileno(), 0x8927, struct.pack('256s', ifname[:15]))
-    s.close()
-    return "".join(['%02x:' % ord(char) for char in info[18:24]])[:-1]
+    # It might be possible that more than one link-layer address is associated
+    # with the interface.  If this is the case, we simply return the first.
+    # If there's no such interface or the interface hasMAC address,
+    # we raise an RuntimeError
+    macdict = getmacaddrs()
+    try:
+        addr = macdict[ifname][0]
+    except (IndexError, KeyError):
+        raise RuntimeError, "%s: Can't find address information." % ifname
+    return addr
 
 
 def tamper_hwaddress(hwaddress):
@@ -54,7 +189,7 @@ def read_uid(uid_path):
         bline = line.strip()
         if UIDRE.match(bline):
             return bline
-    raise ValueError("No UID found in UID file: %s" % uid_path)
+    raise RuntimeError, "No UID found in UID file: %s" % uid_path
 
 
 def write_uid(uid, uid_path):
