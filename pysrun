@@ -25,6 +25,10 @@ from socket import AF_INET, AF_INET6, inet_ntop
 from ctypes import *
 
 
+# Regexp for the returned "uid" used by the SRUN server.
+UIDRE = re.compile(r"[0-9a-zA-Z]+")  #FIXME: this is only a guess.
+
+
 def platformis(plat):
     """Check whether plat matches the platform of the machine. The comparison
     is case-insensitive.
@@ -46,14 +50,16 @@ else:
     raise NotImplementedError, "Not implemented for %s" % platform.system()
 
 
+# Implementation of getifaddrs()-based MAC functions.
+# Ref1: http://kbyanc.blogspot.com/2010/11/python-enumerating-ip-addresses-on.html
+# Ref2: http://carnivore.it/2010/07/22/python_-_getifaddrs
 class ifa_ifu_u(Union):
     _fields_ = [
             ("ifu_broadaddr", c_void_p),
             ("ifu_dstaddr", c_void_p)]
 
 
-# AF_UNKNOWN / generic
-if platformis("darwin") or platformis("freebsd"):
+if platformis("freebsd"):
     class sockaddr(Structure):
         _fields_ = [
                 ("sa_len", c_uint8),
@@ -153,10 +159,6 @@ def getmacaddrs():
     libc.freeifaddrs(ptr)
 
     return result
-
-
-# Regexp for the returned "uid" used by the SRUN server.
-UIDRE = re.compile(r"[0-9a-zA-Z]+")  #FIXME: this is only a guess.
 
 
 def get_hwaddress(ifname):
