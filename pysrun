@@ -35,7 +35,7 @@ def platformis(plat):
 
     """
     # we are not using sys.platform because that info was written when
-    # Python is compiled, not run.
+    # Python is compiled, not run.  Practically this is a non-issue.
     platformid = platform.system().lower()
     return platformid.startswith(plat.lower())
 
