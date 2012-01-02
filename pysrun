@@ -48,10 +48,12 @@ def platformis(plat):
 
 # Platform-specific initialization
 if platformis("linux"):
-    from socket import AF_PACKET    # Linux-ism link layer address family
-    af_link = AF_PACKET
+    # Linux link-layer address family
+    from socket import AF_PACKET as af_link
 elif platformis("freebsd"):
-    af_link = 18                    # According to FreeBSD doc, this is AF_LINK
+    # According to FreeBSD doc, this is AF_LINK.  See sys/socket.h
+    # http://www.freebsd.org/doc/en/books/developers-handbook/sockets-essential-functions.html
+    af_link = 18
 else:
     raise NotImplementedError, "Not implemented for %s" % platform.system()
 
