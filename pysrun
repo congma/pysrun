@@ -26,7 +26,13 @@ from ctypes import *
 
 
 # Regexp for the returned "uid" used by the SRUN server.
-UIDRE = re.compile(r"[0-9a-zA-Z]+")  #FIXME: this is only a guess.
+UIDRE = re.compile(r"[0-9]+")  #FIXME: this is only a guess.
+
+# Server error message table. This, too, is just guesses.
+ERRMSG = {"username_error": "invalid username",
+        "password_error": "invalid password",
+        "ip_exist_error": "already authenticated",
+        "online_num_error": "maximal number of online users exceeded"}
 
 
 def platformis(plat):
@@ -203,12 +209,16 @@ def write_uid(uid, uid_path):
 
 
 def do_login(address, port, postdata):
-    """Performs the login action.  Returns the uid."""
+    """Performs the login action.  Blocks until receives server message or
+    timeout.
+
+    Returns the server message."""
 
     url = "http://%s:%s/cgi-bin/do_login" % (address, port)
     f = urllib2.urlopen(url, postdata)
-    uid = UIDRE.match(f.read()).group()
-    return uid
+    msg = f.read()
+    f.close()
+    return msg
 
 
 def do_logout(address, port, postdata):
@@ -217,11 +227,16 @@ def do_logout(address, port, postdata):
     url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
     f = urllib2.urlopen(url, postdata)
     for line in f:
-        print line
+        # FIXME: debugging only
+        print >> sys.stderr, line
+    f.close()
     return None
 
 
 def login(config):
+    """The login sequence."""
+
+    # Gather login data
     uname = config.get("Account", "username")
     passwd = config.get("Account", "password")
     ifname = config.get("Client", "interface")
@@ -237,10 +252,32 @@ def login(config):
         "mac": tamper_hwaddress(get_hwaddress(ifname))}
     login_postdata = urllib.urlencode(login_data)
 
-    uid = do_login(address, port, login_postdata)
-    write_uid(uid, fname)
+    # Send data and receive response.
+    # Expect either uid or server exception message.
+    msg = do_login(address, port, login_postdata)
+
+    # Analyse return message.
+    txt, part, tail = msg.partition("`")
+    if not part:            # Message doesn't contain the sep character "`"
+        raise RuntimeError, "Server return message not understood: %s" % msg
+
+    if UIDRE.match(txt):    # We got the uid
+        write_uid(txt, fname)
+    else:                   # Should be exception message
+        handle_server_exception(txt)
+        # And leave the uid file alone, if exist
 
     return None
+
+
+def handle_server_exception(txt):
+    if txt in ERRMSG:
+        # We don't raise RuntimeError, because this is something the program
+        # understands.
+        print >> sys.stderr, "Login error: %s." % ERRMSG[txt]
+        sys.exit(1)
+    else:
+        raise RuntimeError, "Unhandled login error: %s." % ERRMSG[txt]
 
 
 def logout(config):
