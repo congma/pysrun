@@ -10,7 +10,9 @@ This is expected to be fixed in the future.
 The configuration file is used to store login credentials and run-time
 options.  An example config file is provided with the default settings.
 
-This program is in the Public Domain.  You are free to use it and modify it.
+This program is licensed under the BSD license.  You are free to use it
+or modify it provided the conditions in the license are met. See the file
+COPYRIGHT.
 
 
 """
