@@ -297,8 +297,17 @@ def logout(config):
     return None
 
 
+def show_usage_and_fail():
+    print >> sys.stderr, "Usage: pysrun {login|logout}"
+    exit(2)
+
+
 if __name__ == "__main__":
-    op = sys.argv[1]
+    try:
+        op = sys.argv[1]
+    except IndexError:
+        show_usage_and_fail()
+
     #FIXME: this shouldn't be hard-coded.
     config_path = os.path.expanduser("~/.pysrun.cfg")
     config = ConfigParser.RawConfigParser()
@@ -309,4 +318,4 @@ if __name__ == "__main__":
     elif op == "logout":
         logout(config)
     else:
-        sys.exit(2)
+        show_usage_and_fail()
