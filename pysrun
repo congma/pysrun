@@ -23,7 +23,6 @@ import ConfigParser
 import urllib
 import urllib2
 import platform
-from socket import AF_INET, AF_INET6, inet_ntop
 from ctypes import *
 
 
@@ -34,7 +33,9 @@ UIDRE = re.compile(r"[0-9]+")  #FIXME: this is only a guess.
 ERRMSG = {"username_error": "invalid username",
         "password_error": "invalid password",
         "ip_exist_error": "already authenticated",
-        "online_num_error": "maximal number of online users exceeded"}
+        "online_num_error": "maximal number of online users exceeded",
+        "version_error": "request rejected by server",
+        "uid_error": "UID mismatch"}    # uid_error could occur on logout
 
 
 def platformis(plat):
@@ -230,11 +231,12 @@ def do_logout(address, port, postdata):
 
     url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
     f = urllib2.urlopen(url, postdata)
-    for line in f:
-        # FIXME: debugging only
-        print >> sys.stderr, line
-    f.close()
-    return None
+    s = f.read().strip()
+    if s == "logout_ok":    # Magic constant indicating successful logout
+        f.close()
+        return None
+    else:                   # Something wrong w/ logout
+        handle_server_exception("Logout error", s)
 
 
 def login(config):
@@ -268,17 +270,26 @@ def login(config):
     if UIDRE.match(txt):    # We got the uid
         write_uid(txt, fname)
     else:                   # Should be exception message
-        handle_server_exception(txt)
+        handle_server_exception("Login error", txt)
         # And leave the uid file alone, if exist
 
     return None
 
 
-def handle_server_exception(txt):
+def handle_server_exception(prefix, txt):
+    """Handle the error message returned by the server.
+
+    If the error is understood, print the corresponding human-readable
+    error message with prefix prefixed to standard error.  If the error
+    message is not understood, raise RuntimeError with the message echoed.
+
+    In either case, the program fails and exits.
+
+    """
     if txt in ERRMSG:
         # We don't raise RuntimeError, because this is something the program
         # understands.
-        print >> sys.stderr, "Login error: %s." % ERRMSG[txt]
+        print >> sys.stderr, "%s: %s." % (prefix, ERRMSG[txt])
         sys.exit(1)
     else:
         raise RuntimeError, "Unhandled login error: %s." % ERRMSG[txt]
