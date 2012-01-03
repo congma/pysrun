@@ -24,6 +24,7 @@ import urllib
 import urllib2
 import platform
 from ctypes import *
+from ctypes.util import find_library
 
 
 # Regexp for the returned "uid" used by the SRUN server.
@@ -37,6 +38,9 @@ ERRMSG = {"username_error": "invalid username",
         "version_error": "request rejected by server",
         "uid_error": "UID mismatch"}    # uid_error could occur on logout
 
+# NOTE: Calling find_library to locate the dynamc C library will create
+# external processes.  I think I'm better just do it once.
+LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
 
 def platformis(plat):
     """Check whether plat matches the platform of the machine. The comparison
@@ -137,7 +141,7 @@ def getmacaddrs():
     This function calls the platform's getifaddrs() implementation.
 
     """
-    libc = CDLL("libc.so.6")
+    libc = CDLL(LIBC_NAME)
     ptr = c_void_p(None)
     result = libc.getifaddrs(pointer(ptr))
     if result != 0:
