@@ -191,7 +191,7 @@ def getmacaddrs():
     ptr = c_void_p(None)
     result = LIBC.getifaddrs(pointer(ptr))
     if result != 0:
-        return None
+        return {}
     ifa = ifaddrs.from_address(ptr.value)
     result = {}
 
