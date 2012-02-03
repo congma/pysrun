@@ -64,9 +64,8 @@ pysrun 是用Python编写的北师大上网认证网关客户端
 
 * 不适用于64位系统, 需要在64位系统上再安装32位C标准库.
 * 是"黑箱"程序, 无源码, 不知其工作原理, 必须诉诸逆向工程.
-* 自Linux 2.6.35后, 出现了官方客户端无法使用的情况. 其原因是官方客户端在进行`bind()`调用时采取了不规范的用法, 被较新的内核认为是错误的调用而无法执行 (参见https://lkml.org/lkml/2011/7/9/37, 或 torvalds/linux@d0733d2e29b652b2e7b1438ececa732e4eed98eb). 这导致在较新的系统上官方客户端完全失效.
-[附注: 在更新的系统上, `bind()`到`AF_UNSPEC`类型的地址被允许用于地址为`INADDR_ANY`,
-见 torvalds/linux@29c486df6a208432b370bd4be99ae1369ede28d8, 而这也正是官方客户端所做的. 所以对于此commit以后的内核版本, 这一点不能用于作为否定官方客户端的较强论据.]
+* 自Linux 2.6.35后, 出现了官方客户端无法使用的情况. 其原因是官方客户端在进行`bind()`调用时采取了不规范的用法, 被较新的内核认为是错误的调用而无法执行 (参见https://lkml.org/lkml/2011/7/9/37, 或 [Linux commit d0733d2e][d0733d2e]). 这导致在较新的系统上官方客户端完全失效.
+> 附注: 在更新的系统上, `bind()`到`AF_UNSPEC`类型的地址被允许用于地址为`INADDR_ANY`, 见 [Linux commit 29c486df][29c486df], 而这也正是官方客户端所做的. 所以对于此commit以后的内核版本, 这一点不能用于作为否定官方客户端的较强论据.
 
 同时, 北师大也没有给出对各种BSD系统的支持. 尽管很多BSD系统建有Linux兼容层, 但通过兼容层运行本来就编写甚为sloppy的Linux程序可能遇到各种问题.
 
@@ -77,3 +76,7 @@ pysrun 是用Python编写的北师大上网认证网关客户端
 ## 授权
 
 BSD许可证, 见文件COPYRIGHT
+
+
+[d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
+[29c486df]: https://github.com/torvalds/linux/commit/29c486df6a208432b370bd4be99ae1369ede28d8 "Linux commit 29c486df6a208432b370bd4be99ae1369ede28d8"
