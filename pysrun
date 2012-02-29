@@ -41,7 +41,6 @@ ERRMSG = {"username_error": "invalid username",
 # NOTE: Calling find_library to locate the dynamc C library will create
 # external processes.  I think I'm better just do it once.
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
-
 LIBC = CDLL(LIBC_NAME)
 
 PLATFORM = platform.system().lower()
@@ -50,7 +49,6 @@ PLATFORM = platform.system().lower()
 # Implementation of getifaddrs()-based MAC functions.
 # Ref1: http://kbyanc.blogspot.com/2010/11/python-enumerating-ip-addresses-on.html
 # Ref2: http://carnivore.it/2010/07/22/python_-_getifaddrs
-
 
 # Linux: the broadcast and destination address pointers form a union (since
 # the peer cannot be dst and brd at the same time).  On BSD the struct ifaddrs
@@ -61,18 +59,19 @@ class _linux_ifa_ifu_u(Union):
             ("ifu_dstaddr", c_void_p)]
 
 
+# sockaddr-related structures
 # For generic/unknown address family
 class _bsd_sockaddr(Structure):
-        _fields_ = [
-                ("sa_len", c_uint8),
-                ("sa_family", c_uint8),
-                ("sa_data", (c_uint8 * 14))]
+    _fields_ = [
+            ("sa_len", c_uint8),
+            ("sa_family", c_uint8),
+            ("sa_data", (c_uint8 * 14))]
 
 
 class _linux_sockaddr(Structure):
-        _fields_ = [
-                ("sa_family", c_uint16),
-                ("sa_data", (c_uint8 * 14))]
+    _fields_ = [
+            ("sa_family", c_uint16),
+            ("sa_data", (c_uint8 * 14))]
 
 
 # AF_PACKET / Linux
@@ -94,8 +93,7 @@ class _linux_sockaddr_ll(Structure):
 
 # AF_LINK -- BSD family, struct sockaddr_dl
 # BSD: net/if_dl.h
-# The "short data" is used by NetBSD / OpenBSD.  The difference is subtle,
-# as the 12-char data is defined as *minimum* requirement.
+# Pretty-printer mixin for both long- and short-data variants.
 class _bsd_sockaddr_dl_formatter_mixin(object):
     """Mixin class that added pretty-printing function to
     the Python classes that interface the various BSD sockaddr_dl
@@ -108,6 +106,8 @@ class _bsd_sockaddr_dl_formatter_mixin(object):
         return ":".join(["%02x" % x for x in addrdata])
 
 
+# The "short data" is used by NetBSD / OpenBSD.  The difference is subtle,
+# as the 12-char data is defined as *minimum* requirement.
 class _bsd_short_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
     _fields_ = [
             ("sdl_len", c_uint8),
@@ -120,7 +120,7 @@ class _bsd_short_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
             ("sdl_data", (c_uint8 * 12))]
 
 
-# The "long data" version is used by FreeBSD / DragonFlyBSD
+# The "long data" version is used by FreeBSD / DragonFlyBSD.
 class _bsd_long_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
     _fields_ = [
             ("sdl_len", c_uint8),
@@ -229,7 +229,8 @@ def get_hwaddress(ifname):
     try:
         addr = macdict[ifname][0]
     except (IndexError, KeyError):
-        handle_exception("Error: interface %s: can't find address information" % ifname)
+        handle_exception("Error: interface %s: can't find address information" \
+                % ifname)
     return addr
 
 
@@ -270,7 +271,8 @@ def do_login(address, port, postdata):
     try:
         f = urllib2.urlopen(url, postdata)
     except urllib2.URLError as e:
-        handle_exception("Error: can't communicate to server. The reason is: %s" % e.reason)
+        handle_exception("Error: can't communicate to server."
+                "The reason is: %s" % e.reason)
     msg = f.read()
     f.close()
     return msg
@@ -283,7 +285,8 @@ def do_logout(address, port, postdata):
     try:
         f = urllib2.urlopen(url, postdata)
     except urllib2.URLError as e:
-        handle_exception("Error: can't communicate to server. The reason is: %s" % e.reason)
+        handle_exception("Error: can't communicate to server."
+                "The reason is: %s" % e.reason)
     s = f.read().strip()
     if s == "logout_ok":    # Magic constant indicating successful logout
         f.close()
