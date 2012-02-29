@@ -36,6 +36,7 @@ ERRMSG = {"username_error": "invalid username",
         "ip_exist_error": "already authenticated",
         "online_num_error": "maximal number of online users exceeded",
         "version_error": "request rejected by server",
+        "status_error": "payment required",
         "uid_error": "UID mismatch"}    # uid_error could occur on logout
 
 # NOTE: Calling find_library to locate the dynamc C library will create
