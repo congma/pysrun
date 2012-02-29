@@ -229,7 +229,7 @@ def get_hwaddress(ifname):
     try:
         addr = macdict[ifname][0]
     except (IndexError, KeyError):
-        raise RuntimeError, "%s: Can't find address information." % ifname
+        handle_exception("Error: interface %s: can't find address information" % ifname)
     return addr
 
 
@@ -267,7 +267,10 @@ def do_login(address, port, postdata):
     Returns the server message."""
 
     url = "http://%s:%s/cgi-bin/do_login" % (address, port)
-    f = urllib2.urlopen(url, postdata)
+    try:
+        f = urllib2.urlopen(url, postdata)
+    except urllib2.URLError as e:
+        handle_exception("Error: can't communicate to server. The reason is: %s" % e.reason)
     msg = f.read()
     f.close()
     return msg
@@ -277,13 +280,16 @@ def do_logout(address, port, postdata):
     """Performs the logout action and display the returned message."""
 
     url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
-    f = urllib2.urlopen(url, postdata)
+    try:
+        f = urllib2.urlopen(url, postdata)
+    except urllib2.URLError as e:
+        handle_exception("Error: can't communicate to server. The reason is: %s" % e.reason)
     s = f.read().strip()
     if s == "logout_ok":    # Magic constant indicating successful logout
         f.close()
         return None
     else:                   # Something wrong w/ logout
-        handle_server_exception("Logout error", s)
+        handle_server_exception("Logout: server indicates error", s)
 
 
 def login(config):
@@ -317,7 +323,7 @@ def login(config):
     if UIDRE.match(txt):    # We got the uid
         write_uid(txt, fname)
     else:                   # Should be exception message
-        handle_server_exception("Login error", txt)
+        handle_server_exception("Login: server indicates error", txt)
         # And leave the uid file alone, if exist
 
     return None
@@ -336,10 +342,17 @@ def handle_server_exception(prefix, txt):
     if txt in ERRMSG:
         # We don't raise RuntimeError, because this is something the program
         # understands.
-        print >> sys.stderr, "%s: %s." % (prefix, ERRMSG[txt])
-        sys.exit(1)
+        handle_exception("%s: %s" % (prefix, ERRMSG[txt]))
     else:
-        raise RuntimeError, "Unhandled login error: %s." % ERRMSG[txt]
+        raise RuntimeError, "Unhandled login error: %s" % ERRMSG[txt]
+
+
+def handle_exception(txt):
+    """Generic exception handler."""
+
+    # Doesn't actually handle, just report and crash.
+    print >> sys.stderr, "%s" % txt
+    sys.exit(1)
 
 
 def logout(config):
