@@ -200,10 +200,11 @@ def getmacaddrs():
         if name not in result:
             result[name] = []
 
-        sa = sockaddr.from_address(ifa.ifa_addr)
-
-        if sa.sa_family == AF_LINK:
-            if ifa.ifa_addr is not None:
+        # Some interface (such as a TUN virtual network) doesn't give us
+        # ifa_addr at all and we can usually skip due to the usage case.
+        if ifa.ifa_addr:
+            sa = sockaddr.from_address(ifa.ifa_addr)
+            if sa.sa_family == AF_LINK:
                 si = sockaddr_dl.from_address(ifa.ifa_addr)
                 addr = "%s" % si
                 if addr:
