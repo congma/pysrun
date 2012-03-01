@@ -1,7 +1,7 @@
 #!/usr/bin/env python   
 """A Python implementation of the SRUN 3000 internet tolling client.
 
-Usage: pysrun {login|logout}
+Usage: pysrun {login|logout|kick}
 
 Before starting the program, a configuration file must be saved at the
 path "~/.pysrun.cfg".  As of now, the path to config file is hard-coded.
@@ -343,6 +343,25 @@ def logout(config):
     return None
 
 
+def kick(config):
+    """Kick all users using the account."""
+
+    uname = config.get("Account", "username")
+    passwd = config.get("Account", "password")
+    address = config.get("Server", "address")
+    port = config.get("Server", "port")
+    url = "http://%s:%s/cgi-bin/force_logout" % (address, port)
+
+    kick_data = {"username": uname, "password": passwd}
+    kick_postdata = urllib.urlencode(kick_data)
+
+    msg = communicate_to_server(url, kick_postdata)
+    s = msg.strip()
+    if s != "logout_ok":    # NOTE: Magic constant used.
+        handle_server_exception("Kick: server indicates error", s)
+    return None
+
+
 def handle_server_exception(prefix, txt):
     """Handle the error message returned by the server.
 
@@ -370,7 +389,7 @@ def handle_exception(txt):
 
 
 def show_usage_and_fail():
-    print >> sys.stderr, "Usage: pysrun {login|logout}"
+    print >> sys.stderr, "Usage: pysrun {login|logout|kick}"
     exit(2)
 
 
@@ -389,5 +408,7 @@ if __name__ == "__main__":
         login(config)
     elif op == "logout":
         logout(config)
+    elif op == "kick":
+        kick(config)
     else:
         show_usage_and_fail()
