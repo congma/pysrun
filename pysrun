@@ -203,7 +203,8 @@ def getmacaddrs():
             result[name] = []
 
         # Some interface (such as a TUN virtual network) doesn't give us
-        # ifa_addr at all and we can usually skip due to the usage case.
+        # ifa_addr at all and we can usually skip them because they're hardly
+        # relevant for our usage case.
         if ifa.ifa_addr:
             sa = sockaddr.from_address(ifa.ifa_addr)
             if sa.sa_family == AF_LINK:
