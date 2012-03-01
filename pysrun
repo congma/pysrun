@@ -265,13 +265,16 @@ def write_uid(uid, uid_path):
     return None
 
 
-def do_login(address, port, postdata):
-    """Performs the login action.  Blocks until receives server message or
-    timeout.
+def communicate_to_server(url, postdata):
+    """Communicate to the authentication/app gateway server by HTTP messages,
+    with data sent using the POST method.
 
-    Returns the server message."""
+    Returns the document returned from server, unchanged.  It is up to the
+    caller to decide what to do with the document.
 
-    url = "http://%s:%s/cgi-bin/do_login" % (address, port)
+    May exit on network failure.
+
+    """
     try:
         f = urllib2.urlopen(url, postdata)
     except urllib2.URLError as e:
@@ -280,23 +283,6 @@ def do_login(address, port, postdata):
     msg = f.read()
     f.close()
     return msg
-
-
-def do_logout(address, port, postdata):
-    """Performs the logout action and display the returned message."""
-
-    url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
-    try:
-        f = urllib2.urlopen(url, postdata)
-    except urllib2.URLError as e:
-        handle_exception("Error: can't communicate to server."
-                "The reason is: %s" % e.reason)
-    s = f.read().strip()
-    if s == "logout_ok":    # Magic constant indicating successful logout
-        f.close()
-        return None
-    else:                   # Something wrong w/ logout
-        handle_server_exception("Logout: server indicates error", s)
 
 
 def login(config):
@@ -309,6 +295,7 @@ def login(config):
     address = config.get("Server", "address")
     port = config.get("Server", "port")
     fname = os.path.expanduser(config.get("Session", "uidfile"))
+    url = "http://%s:%s/cgi-bin/do_login" % (address, port)
 
     login_data = {"username": uname,
         "password": passwd,
@@ -320,7 +307,7 @@ def login(config):
 
     # Send data and receive response.
     # Expect either uid or server exception message.
-    msg = do_login(address, port, login_postdata)
+    msg = communicate_to_server(url, login_postdata)
 
     # Analyse return message.
     txt, part, tail = msg.partition("`")
@@ -333,6 +320,26 @@ def login(config):
         handle_server_exception("Login: server indicates error", txt)
         # And leave the uid file alone, if exist
 
+    return None
+
+
+def logout(config):
+    """The logout sequence."""
+
+    fname = os.path.expanduser(config.get("Session", "uidfile"))
+    uid = read_uid(fname)
+
+    address = config.get("Server", "address")
+    port = config.get("Server", "port")
+    url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
+
+    logout_data = {"uid": uid}
+    logout_postdata = urllib.urlencode(logout_data)
+
+    msg = communicate_to_server(url, logout_postdata)
+    s = msg.strip()
+    if s != "logout_ok":    # NOTE: Magic constant used.
+        handle_server_exception("Logout: server indicates error", s)
     return None
 
 
@@ -360,21 +367,6 @@ def handle_exception(txt):
     # Doesn't actually handle, just report and crash.
     print >> sys.stderr, "%s" % txt
     sys.exit(1)
-
-
-def logout(config):
-    fname = os.path.expanduser(config.get("Session", "uidfile"))
-    uid = read_uid(fname)
-
-    address = config.get("Server", "address")
-    port = config.get("Server", "port")
-
-    logout_data = {"uid": uid}
-    logout_postdata = urllib.urlencode(logout_data)
-
-    do_logout(address, port, logout_postdata)
-
-    return None
 
 
 def show_usage_and_fail():
