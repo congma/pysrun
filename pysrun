@@ -37,7 +37,8 @@ ERRMSG = {"username_error": "invalid username",
         "online_num_error": "maximal number of online users exceeded",
         "version_error": "request rejected by server",
         "status_error": "payment required",
-        "uid_error": "UID mismatch"}    # uid_error could occur on logout
+        "sync_error": "server sync not complete, try later",
+        "uid_error": "session ID mismatch"} # uid_error could occur on logout
 
 # NOTE: Calling find_library to locate the dynamc C library will create
 # external processes.  I think I'm better just do it once.
