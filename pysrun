@@ -38,6 +38,9 @@ ERRMSG = {"username_error": "invalid username",
         "version_error": "request rejected by server",
         "status_error": "payment required",
         "sync_error": "server sync not complete, try later",
+        # logout_error seems to only occur when you do a kick with
+        # a wrong password
+        "logout_error": "cannot force logout.  Check login credentials?",
         "uid_error": "session ID mismatch"} # uid_error could occur on logout
 
 # NOTE: Calling find_library to locate the dynamc C library will create
