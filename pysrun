@@ -22,7 +22,7 @@ import re
 import ConfigParser
 from urllib import urlencode
 import urllib2
-from platform import system
+from os import uname
 from ctypes import *
 from ctypes.util import find_library
 
@@ -48,7 +48,7 @@ ERRMSG = {"username_error": "invalid username",
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
 LIBC = CDLL(LIBC_NAME)
 
-PLATFORM = system().lower()
+PLATFORM = uname()[0].lower()
 
 
 # Implementation of getifaddrs()-based MAC functions.
