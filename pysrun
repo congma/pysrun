@@ -20,9 +20,9 @@ import sys
 import os.path
 import re
 import ConfigParser
-import urllib
+from urllib import urlencode
 import urllib2
-import platform
+from platform import system
 from ctypes import *
 from ctypes.util import find_library
 
@@ -48,7 +48,7 @@ ERRMSG = {"username_error": "invalid username",
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
 LIBC = CDLL(LIBC_NAME)
 
-PLATFORM = platform.system().lower()
+PLATFORM = system().lower()
 
 
 # Implementation of getifaddrs()-based MAC functions.
@@ -306,7 +306,7 @@ def login(config):
         "type": "3",
         "n": "99",
         "mac": tamper_hwaddress(get_hwaddress(ifname))}
-    login_postdata = urllib.urlencode(login_data)
+    login_postdata = urlencode(login_data)
 
     # Send data and receive response.
     # Expect either uid or server exception message.
@@ -337,7 +337,7 @@ def logout(config):
     url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
 
     logout_data = {"uid": uid}
-    logout_postdata = urllib.urlencode(logout_data)
+    logout_postdata = urlencode(logout_data)
 
     msg = communicate_to_server(url, logout_postdata)
     s = msg.strip()
