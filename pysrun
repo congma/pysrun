@@ -166,7 +166,7 @@ class _bsd_ifaddrs(Structure):
 
 
 # Platform-specific initialization
-if PLATFORM.startswith("linux"):
+if PLATFORM == "linux":
     from socket import AF_PACKET as AF_LINK
 else:
     # According to FreeBSD doc, this is AF_LINK.  See sys/socket.h
@@ -175,6 +175,11 @@ else:
     AF_LINK = 18
 
 
+# The values are tuples organized in the following manner:
+# Index 0: The equivalent of struct ifaddrs, see ifaddrs.h, getifaddrs(3).
+# Index 1: The equivalent of struct sockaddr_ll (Linux, see netpacket/packet.h)
+#          or sockaddr_dl (BSD, see net/if_dl.h).
+# Index 2: The equivalent of struct sockaddr, see sys/socket.h.
 PLATFORM_LOOKUP = {"linux": (_linux_ifaddrs,
     _linux_sockaddr_ll, _linux_sockaddr),
     "freebsd": (_bsd_ifaddrs, _bsd_long_sockaddr_dl, _bsd_sockaddr),
