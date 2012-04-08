@@ -243,8 +243,8 @@ def get_hwaddress(ifname):
     try:
         addr = macdict[ifname][0]
     except (IndexError, KeyError):
-        handle_exception("Error: interface %s: can't find address information" \
-                % ifname)
+        handle_exception("Error: "
+        "interface %s: can't find address information" % ifname)
     return addr
 
 
