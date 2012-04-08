@@ -23,6 +23,8 @@ import ConfigParser
 from urllib import urlencode
 import urllib2
 from os import uname
+# pylint: disable=W0401
+# pylint: disable=W0614
 from ctypes import *
 from ctypes.util import find_library
 
@@ -293,19 +295,19 @@ def communicate_to_server(url, postdata):
     return msg
 
 
-def login(config):
+def login(cfg):
     """The login sequence."""
 
     # Gather login data
-    uname = config.get("Account", "username")
-    passwd = config.get("Account", "password")
-    ifname = config.get("Client", "interface")
-    address = config.get("Server", "address")
-    port = config.get("Server", "port")
-    fname = os.path.expanduser(config.get("Session", "uidfile"))
+    ulogin = cfg.get("Account", "username")
+    passwd = cfg.get("Account", "password")
+    ifname = cfg.get("Client", "interface")
+    address = cfg.get("Server", "address")
+    port = cfg.get("Server", "port")
+    fname = os.path.expanduser(cfg.get("Session", "uidfile"))
     url = "http://%s:%s/cgi-bin/do_login" % (address, port)
 
-    login_data = {"username": uname,
+    login_data = {"username": ulogin,
         "password": passwd,
         "drop": "0",
         "type": "3",
@@ -318,6 +320,7 @@ def login(config):
     msg = communicate_to_server(url, login_postdata)
 
     # Analyse return message.
+    # pylint: disable=W0612
     txt, part, tail = msg.partition("`")
     if not part:            # Message doesn't contain the sep character "`"
         raise RuntimeError("Server return message not understood: %s" % msg)
@@ -331,14 +334,14 @@ def login(config):
     return None
 
 
-def logout(config):
+def logout(cfg):
     """The logout sequence."""
 
-    fname = os.path.expanduser(config.get("Session", "uidfile"))
+    fname = os.path.expanduser(cfg.get("Session", "uidfile"))
     uid = read_uid(fname)
 
-    address = config.get("Server", "address")
-    port = config.get("Server", "port")
+    address = cfg.get("Server", "address")
+    port = cfg.get("Server", "port")
     url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
 
     logout_data = {"uid": uid}
@@ -351,17 +354,17 @@ def logout(config):
     return None
 
 
-def kick(config):
+def kick(cfg):
     """Kick all users using the account."""
 
-    uname = config.get("Account", "username")
-    passwd = config.get("Account", "password")
-    address = config.get("Server", "address")
-    port = config.get("Server", "port")
+    ulogin = cfg.get("Account", "username")
+    passwd = cfg.get("Account", "password")
+    address = cfg.get("Server", "address")
+    port = cfg.get("Server", "port")
     url = "http://%s:%s/cgi-bin/force_logout" % (address, port)
 
-    kick_data = {"username": uname, "password": passwd}
-    kick_postdata = urllib.urlencode(kick_data)
+    kick_data = {"username": ulogin, "password": passwd}
+    kick_postdata = urlencode(kick_data)
 
     msg = communicate_to_server(url, kick_postdata)
     s = msg.strip()
@@ -401,7 +404,7 @@ def show_usage_and_fail():
     exit(2)
 
 
-if __name__ == "__main__":
+def main():
     try:
         op = sys.argv[1]
     except IndexError:
@@ -420,3 +423,7 @@ if __name__ == "__main__":
         kick(config)
     else:
         show_usage_and_fail()
+
+
+if __name__ == "__main__":
+    main()
