@@ -1,4 +1,4 @@
-#!/usr/bin/env python   
+#!/usr/bin/env python
 """A Python implementation of the SRUN 3000 internet tolling client.
 
 Usage: pysrun {login|logout|kick}
@@ -28,7 +28,7 @@ from ctypes.util import find_library
 
 
 # Regexp for the returned "uid" used by the SRUN server.
-UIDRE = re.compile(r"[0-9]+")  #FIXME: this is only a guess.
+UIDRE = re.compile(r"[0-9]+")  # FIXME: this is only a guess.
 
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
@@ -41,7 +41,7 @@ ERRMSG = {"username_error": "invalid username",
         # logout_error seems to only occur when you do a kick with
         # a wrong password
         "logout_error": "cannot force logout.  Check login credentials?",
-        "uid_error": "session ID mismatch"} # uid_error could occur on logout
+        "uid_error": "session ID mismatch"}  # uid_error could occur on logout
 
 # NOTE: Calling find_library to locate the dynamc C library will create
 # external processes.  I think I'm better just do it once.
@@ -106,7 +106,7 @@ class _bsd_sockaddr_dl_formatter_mixin(object):
 
     """
     def __str__(self):
-        addrdata = self.sdl_data[self.sdl_nlen : self.sdl_nlen
+        addrdata = self.sdl_data[self.sdl_nlen: self.sdl_nlen
                 + self.sdl_alen]
         return ":".join(["%02x" % x for x in addrdata])
 
@@ -262,7 +262,7 @@ def read_uid(uid_path):
         bline = line.strip()
         if UIDRE.match(bline):
             return bline
-    raise RuntimeError, "No UID found in UID file: %s" % uid_path
+    raise RuntimeError("No UID found in UID file: %s" % uid_path)
 
 
 def write_uid(uid, uid_path):
@@ -320,7 +320,7 @@ def login(config):
     # Analyse return message.
     txt, part, tail = msg.partition("`")
     if not part:            # Message doesn't contain the sep character "`"
-        raise RuntimeError, "Server return message not understood: %s" % msg
+        raise RuntimeError("Server return message not understood: %s" % msg)
 
     if UIDRE.match(txt):    # We got the uid
         write_uid(txt, fname)
@@ -385,7 +385,7 @@ def handle_server_exception(prefix, txt):
         # understands.
         handle_exception("%s: %s" % (prefix, ERRMSG[txt]))
     else:
-        raise RuntimeError, "Unhandled login error: %s" % ERRMSG[txt]
+        raise RuntimeError("Unhandled login error: %s" % ERRMSG[txt])
 
 
 def handle_exception(txt):
