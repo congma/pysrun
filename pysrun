@@ -401,7 +401,7 @@ def handle_exception(txt):
 
 def show_usage_and_fail():
     print >> sys.stderr, "Usage: pysrun {login|logout|kick}"
-    exit(2)
+    sys.exit(2)
 
 
 def main():
