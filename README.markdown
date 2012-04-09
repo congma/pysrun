@@ -1,6 +1,6 @@
 # pysrun 
 
-pysrun 是用Python编写的北师大上网认证网关客户端
+pysrun 是用Python编写的北师大上网认证网关客户端.
 
 
 ## 用法简述
@@ -70,7 +70,7 @@ pysrun 是用Python编写的北师大上网认证网关客户端
 
 ## 授权
 
-BSD许可证, 见文件COPYRIGHT
+BSD许可证, 见文件COPYRIGHT.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
