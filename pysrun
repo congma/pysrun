@@ -348,7 +348,7 @@ def login(cfg):
 
     # Gather login data
     fname = os.path.expanduser(cfg["uidfile"])
-    url = "http://%s:%s/cgi-bin/do_login" % (cfg["server"], cfg["port"])
+    url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
 
     login_data = {"username": cfg["username"],
         "password": cfg["password"],
@@ -383,7 +383,7 @@ def logout(cfg):
     fname = os.path.expanduser(cfg["uidfile"])
     uid = read_uid(fname)
 
-    url = "http://%s:%s/cgi-bin/do_logout" % (cfg["server"], cfg["port"])
+    url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
 
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
@@ -398,7 +398,7 @@ def logout(cfg):
 def kick(cfg):
     """Kick all users using the account."""
 
-    url = "http://%s:%s/cgi-bin/force_logout" % (cfg["server"], cfg["port"])
+    url = "http://%s:%s/cgi-bin/force_logout" % (cfg["address"], cfg["port"])
 
     kick_data = {"username": cfg["username"],
             "password": cfg["password"]}

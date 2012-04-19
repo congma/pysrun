@@ -1,5 +1,5 @@
 [Server]
-server=172.16.202.201	# Hostname or IP address of authentication server
+address=172.16.202.201	# Hostname or IP address of authentication server
 port=3333		# Server-side listening port
 
 [Client]
