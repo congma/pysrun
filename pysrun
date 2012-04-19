@@ -31,6 +31,12 @@ from ctypes.util import find_library
 # Regexp for the returned "uid" used by the SRUN server.
 UIDRE = re.compile(r"[0-9]+")  # FIXME: this is only a guess.
 
+# Default configuration option values.
+CONFIG = {"address": "172.16.202.201",
+        "port": "3333",
+        "uidfile": "~/.pysrun_uid",
+        "interface": "eth0"}
+
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
         "password_error": "invalid password",
@@ -450,14 +456,15 @@ def main():
 
     #FIXME: this shouldn't be hard-coded.
     config_path = os.path.expanduser("~/.pysrun.cfg")
-    config = read_config_file(config_path, warn=True)
+    config_from_file = read_config_file(config_path, warn=True)
+    CONFIG.update(config_from_file)
 
     if op == "login":
-        login(config)
+        login(CONFIG)
     elif op == "logout":
-        logout(config)
+        logout(CONFIG)
     elif op == "kick":
-        kick(config)
+        kick(CONFIG)
     else:
         show_usage_and_fail()
 
