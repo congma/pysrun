@@ -280,7 +280,7 @@ def read_config_file(path, warn=False):
         except CfgLineIsBlank:
             continue
         if warn and not record:
-            print >> sys.stderr, "Warning: %s: line %d: garbage in." \
+            print >> sys.stderr, "Warning: %s: line %d: garbage in" \
                         % (path, lineno)
         result.update(record)
     return result
