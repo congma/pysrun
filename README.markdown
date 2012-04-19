@@ -12,7 +12,7 @@ pysrun 是用Python编写的北师大上网认证网关客户端.
 1. `pysrun`: 可执行Python脚本,
 2. `~/.pysrun.cfg`: 配置文件.
 
-本软件包内提供了样例配置文件`pysrun.cfg.example`. 第一次使用前, 请将其拷贝到
+本软件包内提供了样例配置文件`pysrun.cfg.default`. 第一次使用前, 请将其拷贝到
 `~/.pysrun.cfg`, 同时填入包括用户名密码在内的相关信息.
 
 
