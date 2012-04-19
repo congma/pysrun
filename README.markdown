@@ -45,6 +45,7 @@ pysrun 是用Python编写的北师大上网认证网关客户端.
 
 在配置文件中, 上述被中括号括起来的部分 (如`[Server]`) 起到每一节标题的作用.  在0.4版本以前, 它们必须如此.  自从0.4版本开始, 它们可以被彻底删去, 不发挥任何作用, 相当于文件格式第4条所描述的注释.  我们建议您不再使用中括号定义的标题, 最好是替换成用`#`符号开始的注释, 以增加配置文件的可读性.
 
+
 ### 登入, 登出和强制离线操作
 
 1. 登入: 使用`pysrun login`命令. 登入成功后将安静地退出.
@@ -84,3 +85,8 @@ BSD许可证, 见文件COPYRIGHT.
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
 [29c486df]: https://github.com/torvalds/linux/commit/29c486df6a208432b370bd4be99ae1369ede28d8 "Linux commit 29c486df6a208432b370bd4be99ae1369ede28d8"
+
+
+## 版本信息
+
+2012-04-19 version 0.4.
