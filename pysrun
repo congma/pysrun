@@ -386,7 +386,7 @@ def handle_server_exception(prefix, txt):
     if txt in ERRMSG:
         # We don't raise RuntimeError, because this is something the program
         # understands.
-        handle_exception("%s: %s" % (prefix, ERRMSG[txt]))
+        handle_exception("Error: %s: %s" % (prefix, ERRMSG[txt]))
     else:
         raise RuntimeError("Unhandled login error: %s" % ERRMSG[txt])
 
