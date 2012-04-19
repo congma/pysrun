@@ -19,7 +19,6 @@ COPYRIGHT.
 import sys
 import os.path
 import re
-import ConfigParser
 from urllib import urlencode
 import urllib2
 from os import uname
@@ -31,6 +30,12 @@ from ctypes.util import find_library
 
 # Regexp for the returned "uid" used by the SRUN server.
 UIDRE = re.compile(r"[0-9]+")  # FIXME: this is only a guess.
+
+# Default configuration option values.
+CONFIG = {"address": "172.16.202.201",
+        "port": "3333",
+        "uidfile": "~/.pysrun_uid",
+        "interface": "eth0"}
 
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
@@ -255,6 +260,55 @@ def tamper_hwaddress(hwaddress):
     return "ff:ff:%s" % hwaddress[6:]
 
 
+def read_config_file(path, warn=False):
+    """Read the key-value pair configuration options from file located at path.
+
+    If warn is True, warn against all non-conforming lines in addition to
+    ignoring them.  Default: False.
+
+    Returns a dictionary of config options.
+
+
+    """
+    lineno = 0
+    result = {}
+    fh = open(path, "r")
+    for line in fh:
+        lineno += 1
+        try:
+            record = pfilter(line)
+        except CfgLineIsBlank:
+            continue
+        if warn and not record:
+            print >> sys.stderr, "Warning: %s: line %d: garbage in" \
+                        % (path, lineno)
+        result.update(record)
+    return result
+
+
+class CfgLineIsBlank(ValueError):
+    pass
+
+
+def pfilter(line):
+    """Filter input configuration file line for meaningful key-value pair
+
+    FIXME: Explain the rules here.
+
+    """
+    text = line.rsplit("#")[0]  # First hash ('#') starts a comment.
+    if not text.strip():  # Skip blank line and notify caller.
+        raise CfgLineIsBlank
+    key, sep, val = text.partition("=")
+    if not sep:  # Lines not containing the equal sign ('=') are discarded.
+        return {}
+    key = key.strip()
+    val = val.strip()
+    if not (key and val):  # NOTE: Prevent empty value.  This may change...
+        return {}
+    return {key: val}
+
+
 def read_uid(uid_path):
     """Search in the uid_path file for the uid used to end a session.  Stop and
     return on first match."""
@@ -299,20 +353,15 @@ def login(cfg):
     """The login sequence."""
 
     # Gather login data
-    ulogin = cfg.get("Account", "username")
-    passwd = cfg.get("Account", "password")
-    ifname = cfg.get("Client", "interface")
-    address = cfg.get("Server", "address")
-    port = cfg.get("Server", "port")
-    fname = os.path.expanduser(cfg.get("Session", "uidfile"))
-    url = "http://%s:%s/cgi-bin/do_login" % (address, port)
+    fname = os.path.expanduser(cfg["uidfile"])
+    url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
 
-    login_data = {"username": ulogin,
-        "password": passwd,
+    login_data = {"username": cfg["username"],
+        "password": cfg["password"],
         "drop": "0",
         "type": "3",
         "n": "99",
-        "mac": tamper_hwaddress(get_hwaddress(ifname))}
+        "mac": tamper_hwaddress(get_hwaddress(cfg["interface"]))}
     login_postdata = urlencode(login_data)
 
     # Send data and receive response.
@@ -337,12 +386,10 @@ def login(cfg):
 def logout(cfg):
     """The logout sequence."""
 
-    fname = os.path.expanduser(cfg.get("Session", "uidfile"))
+    fname = os.path.expanduser(cfg["uidfile"])
     uid = read_uid(fname)
 
-    address = cfg.get("Server", "address")
-    port = cfg.get("Server", "port")
-    url = "http://%s:%s/cgi-bin/do_logout" % (address, port)
+    url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
 
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
@@ -357,13 +404,10 @@ def logout(cfg):
 def kick(cfg):
     """Kick all users using the account."""
 
-    ulogin = cfg.get("Account", "username")
-    passwd = cfg.get("Account", "password")
-    address = cfg.get("Server", "address")
-    port = cfg.get("Server", "port")
-    url = "http://%s:%s/cgi-bin/force_logout" % (address, port)
+    url = "http://%s:%s/cgi-bin/force_logout" % (cfg["address"], cfg["port"])
 
-    kick_data = {"username": ulogin, "password": passwd}
+    kick_data = {"username": cfg["username"],
+            "password": cfg["password"]}
     kick_postdata = urlencode(kick_data)
 
     msg = communicate_to_server(url, kick_postdata)
@@ -412,15 +456,15 @@ def main():
 
     #FIXME: this shouldn't be hard-coded.
     config_path = os.path.expanduser("~/.pysrun.cfg")
-    config = ConfigParser.RawConfigParser()
-    config.read(config_path)
+    config_from_file = read_config_file(config_path)
+    CONFIG.update(config_from_file)
 
     if op == "login":
-        login(config)
+        login(CONFIG)
     elif op == "logout":
-        logout(config)
+        logout(CONFIG)
     elif op == "kick":
-        kick(config)
+        kick(CONFIG)
     else:
         show_usage_and_fail()
 
