@@ -456,7 +456,7 @@ def main():
 
     #FIXME: this shouldn't be hard-coded.
     config_path = os.path.expanduser("~/.pysrun.cfg")
-    config_from_file = read_config_file(config_path, warn=True)
+    config_from_file = read_config_file(config_path)
     CONFIG.update(config_from_file)
 
     if op == "login":
