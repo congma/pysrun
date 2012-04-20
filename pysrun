@@ -282,7 +282,7 @@ def read_config_file(path, warn=False):
         except CfgLineIsGarbage as g:
             if warn:
                 print >> sys.stderr, \
-                        "Warning: %s: line %d: column %d: garbage in\n%r" \
+                        "Warning: %s: line %d: column %d: garbage in\n%s" \
                         % (path, lineno, g.col, g)
             continue
         result.update(record)
@@ -312,7 +312,7 @@ class CfgLineIsGarbage(ValueError):
         self.col = offending_col
         return None
 
-    def __repr__(self):
+    def __str__(self):
         """Returns a two-line representation of the culprit line.  The first
         output line is a copy of the line with trailing whitespace removed
         to save screen space.  The second line is used to show a cursor mark
