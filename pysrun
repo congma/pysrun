@@ -279,34 +279,69 @@ def read_config_file(path, warn=False):
             record = pfilter(line)
         except CfgLineIsBlank:
             continue
-        if warn and not record:
-            print >> sys.stderr, "Warning: %s: line %d: garbage in" \
-                        % (path, lineno)
+        except CfgLineIsGarbage as g:
+            if warn:
+                print >> sys.stderr, \
+                        "Warning: %s: line %d: column %d: garbage in\n%r" \
+                        % (path, lineno, g.col, g)
+            continue
         result.update(record)
     return result
 
 
 class CfgLineIsBlank(ValueError):
+    """Exception class notifying caller that the line being filtered
+    is a blank line, containing only blank characters or comment.
+
+    """
     pass
 
 
-def pfilter(line):
-    """Filter input configuration file line for meaningful key-value pair
-
-    FIXME: Explain the rules here.
+class CfgLineIsGarbage(ValueError):
+    """Exception class notifying the caller that the line being filtered
+    is a garbage line.
 
     """
-    text = line.rsplit("#")[0]  # First hash ('#') starts a comment.
+    def __init__(self, text, offending_col):
+        """text should be the culprit text for which warning is issued
+        offending_col should be the no. of the first offending column.
+
+        """
+        super(CfgLineIsGarbage, self).__init__(text, offending_col)
+        self.text = text
+        self.col = offending_col
+        return None
+
+    def __repr__(self):
+        """Returns a two-line representation of the culprit line.  The first
+        output line is a copy of the line with trailing whitespace removed
+        to save screen space.  The second line is used to show a cursor mark
+        pointing to the first offending column.
+
+        """
+        return "%s\n" % self.text + " " * self.col + "^"
+
+
+def pfilter(line):
+    """Filter input configuration file line for meaningful key-value pair.
+
+    See README for the format definition.
+
+    """
+    text = line.split("#")[0]  # First hash ('#') starts a comment.
     if not text.strip():  # Skip blank line and notify caller.
         raise CfgLineIsBlank
+    bareline = line.rstrip()
     key, sep, val = text.partition("=")
     if not sep:  # Lines not containing the equal sign ('=') are discarded.
-        return {}
-    key = key.strip()
-    val = val.strip()
-    if not (key and val):  # NOTE: Prevent empty value.  This may change...
-        return {}
-    return {key: val}
+        raise CfgLineIsGarbage(bareline, len(bareline))
+    nkey = key.strip()
+    nval = val.strip()
+    if not nkey:
+        raise CfgLineIsGarbage(bareline, len(key))
+    elif not nval:  # NOTE: Prevent empty value.  This may change...
+        raise CfgLineIsGarbage(bareline, len(bareline))
+    return {nkey: nval}
 
 
 def read_uid(uid_path):
@@ -456,7 +491,7 @@ def main():
 
     #FIXME: this shouldn't be hard-coded.
     config_path = os.path.expanduser("~/.pysrun.cfg")
-    config_from_file = read_config_file(config_path)
+    config_from_file = read_config_file(config_path, warn=True)
     CONFIG.update(config_from_file)
 
     if op == "login":
