@@ -283,6 +283,7 @@ def read_config_file(path, warn=False):
             print >> sys.stderr, "Warning: %s: line %d: garbage in" \
                         % (path, lineno)
         result.update(record)
+    fh.close()
     return result
 
 
@@ -317,6 +318,7 @@ def read_uid(uid_path):
     for line in fh:
         bline = line.strip()
         if UIDRE.match(bline):
+            fh.close()
             return bline
     raise RuntimeError("No UID found in UID file: %s" % uid_path)
 
