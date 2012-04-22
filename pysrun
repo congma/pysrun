@@ -320,7 +320,7 @@ def read_uid(uid_path):
         if UIDRE.match(bline):
             fh.close()
             return bline
-    raise RuntimeError("No UID found in UID file: %s" % uid_path)
+    raise ValueError("no UID found in UID file (%s)" % uid_path)
 
 
 def write_uid(uid, uid_path):
@@ -374,12 +374,16 @@ def login(cfg):
     # pylint: disable=W0612
     txt, part, tail = msg.partition("`")
     if not part:            # Message doesn't contain the sep character "`"
-        raise RuntimeError("Server return message not understood: %s" % msg)
+        handle_exception("Error: login: server return message not understood "
+                "(%s)" % msg)
 
     if UIDRE.match(txt):    # We got the uid
-        write_uid(txt, fname)
-    else:                   # Should be exception message
-        handle_server_exception("Login: server indicates error", txt)
+        try:
+            write_uid(txt, fname)
+        except IOError as io_e:
+            handle_exception("Error: login: can't write UID file (%s)" % io_e)
+    else:                   # Should be exception message from server
+        handle_server_exception("login", txt)
         # And leave the uid file alone, if exist
 
     return None
@@ -389,7 +393,12 @@ def logout(cfg):
     """The logout sequence."""
 
     fname = expanduser(cfg["uidfile"])
-    uid = read_uid(fname)
+    try:
+        uid = read_uid(fname)
+    except IOError as io_e:
+        handle_exception("Error: logout: can't read from UID file (%s)" % io_e)
+    except ValueError as val_e:
+        handle_exception("Error: logout: %s" % val_e)
 
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
 
@@ -399,7 +408,7 @@ def logout(cfg):
     msg = communicate_to_server(url, logout_postdata)
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
-        handle_server_exception("Logout: server indicates error", s)
+        handle_server_exception("logout", s)
     return None
 
 
@@ -415,7 +424,7 @@ def kick(cfg):
     msg = communicate_to_server(url, kick_postdata)
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
-        handle_server_exception("Kick: server indicates error", s)
+        handle_server_exception("kick", s)
     return None
 
 
@@ -432,9 +441,10 @@ def handle_server_exception(prefix, txt):
     if txt in ERRMSG:
         # We don't raise RuntimeError, because this is something the program
         # understands.
-        handle_exception("Error: %s: %s" % (prefix, ERRMSG[txt]))
+        msg = "Error: %s: server indicates error: %s" % (prefix, ERRMSG[txt])
     else:
-        raise RuntimeError("Unhandled login error: %s" % ERRMSG[txt])
+        msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
+    handle_exception(msg)
 
 
 def handle_exception(txt):
