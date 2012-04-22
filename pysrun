@@ -17,11 +17,11 @@ COPYRIGHT.
 
 """
 import sys
-import os.path
 import re
 from urllib import urlencode
 import urllib2
 from os import uname
+from os.path import expanduser
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -355,7 +355,7 @@ def login(cfg):
     """The login sequence."""
 
     # Gather login data
-    fname = os.path.expanduser(cfg["uidfile"])
+    fname = expanduser(cfg["uidfile"])
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
 
     login_data = {"username": cfg["username"],
@@ -388,7 +388,7 @@ def login(cfg):
 def logout(cfg):
     """The logout sequence."""
 
-    fname = os.path.expanduser(cfg["uidfile"])
+    fname = expanduser(cfg["uidfile"])
     uid = read_uid(fname)
 
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
@@ -457,7 +457,7 @@ def main():
         show_usage_and_fail()
 
     #FIXME: this shouldn't be hard-coded.
-    config_path = os.path.expanduser("~/.pysrun.cfg")
+    config_path = expanduser("~/.pysrun.cfg")
     config_from_file = read_config_file(config_path)
     CONFIG.update(config_from_file)
 
