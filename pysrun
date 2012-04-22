@@ -17,6 +17,7 @@ COPYRIGHT.
 
 """
 import sys
+import getopt
 import os.path
 import re
 from urllib import urlencode
@@ -36,6 +37,13 @@ CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0"}
+
+OPT_CONFIG_MAP = {"-a": "address",
+        "-P": "port",
+        "-u": "username",
+        "-p": "password",
+        "-s": "uidfile",
+        "-i": "interface"}
 
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
@@ -483,25 +491,45 @@ def show_usage_and_fail():
     sys.exit(2)
 
 
+def transform_to_config(inputdic):
+    """Translate the keys in inputdic to the corresponding config
+    dictionary key name.
+
+    Returns the transformed dictionary object useful for updating the config
+    dictionary.
+    """
+    result = {}
+    for key, value in inputdic.iteritems():
+        if key in OPT_CONFIG_MAP:
+            result[OPT_CONFIG_MAP[key]] = value
+    return result
+
+
 def main():
+    optspec = "c:d"
+    optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     try:
-        op = sys.argv[1]
-    except IndexError:
-        show_usage_and_fail()
-
-    #FIXME: this shouldn't be hard-coded.
-    config_path = os.path.expanduser("~/.pysrun.cfg")
-    config_from_file = read_config_file(config_path, warn=True)
+        oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
+    except getopt.GetoptError as goe:
+        handle_exception("Error: %s" % goe)
+    opdict = dict(oplist)
+    config_from_cmdline = transform_to_config(opdict)
+    config_path = os.path.expanduser(opdict.get("-c", "~/.pysrun.cfg"))
+    try:
+        config_from_file = read_config_file(config_path, warn=("-d" in opdict))
+    except IOError as ioe:
+        handle_exception("Error: can't read configuration file (%s)" % ioe)
+    # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
+    CONFIG.update(config_from_cmdline)
 
-    if op == "login":
-        login(CONFIG)
-    elif op == "logout":
-        logout(CONFIG)
-    elif op == "kick":
-        kick(CONFIG)
-    else:
+    operation_table = {"login": login,
+            "logout": logout,
+            "kick": kick}
+    valid_ops = operation_table.viewkeys() & args
+    if len(valid_ops) != 1:  # One and only one operation allowed.
         show_usage_and_fail()
+    operation_table[valid_ops.pop()](CONFIG)
 
 
 if __name__ == "__main__":
