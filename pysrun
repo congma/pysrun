@@ -243,13 +243,12 @@ def get_hwaddress(ifname):
     # It might be possible that more than one link-layer address is associated
     # with the interface.  If this is the case, we simply return the first.
     # If there's no such interface or the interface has no MAC address,
-    # we raise an RuntimeError
+    # we notify caller via ValueError.
     macdict = getmacaddrs()
     try:
         addr = macdict[ifname][0]
     except (IndexError, KeyError):
-        handle_exception("Error: "
-        "interface %s: can't find address information" % ifname)
+        raise ValueError("%s" % ifname)
     return addr
 
 
@@ -338,14 +337,8 @@ def communicate_to_server(url, postdata):
     Returns the document returned from server, unchanged.  It is up to the
     caller to decide what to do with the document.
 
-    May exit on network failure.
-
     """
-    try:
-        f = urllib2.urlopen(url, postdata)
-    except urllib2.URLError as e:
-        handle_exception("Error: can't communicate to server."
-                "The reason is: %s" % e.reason)
+    f = urllib2.urlopen(url, postdata)
     msg = f.read()
     f.close()
     return msg
@@ -357,33 +350,39 @@ def login(cfg):
     # Gather login data
     fname = expanduser(cfg["uidfile"])
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
-
+    try:
+        mac = get_hwaddress(cfg["interface"])
+    except ValueError as val_e:
+        error("login", "no MAC address information for interface (%s)" % val_e)
     login_data = {"username": cfg["username"],
         "password": cfg["password"],
         "drop": "0",
         "type": "3",
         "n": "99",
-        "mac": tamper_hwaddress(get_hwaddress(cfg["interface"]))}
+        "mac": tamper_hwaddress(mac)}
     login_postdata = urlencode(login_data)
 
     # Send data and receive response.
     # Expect either uid or server exception message.
-    msg = communicate_to_server(url, login_postdata)
+    try:
+        msg = communicate_to_server(url, login_postdata)
+    except urllib2.URLError as url_e:
+        error("login", "can't communicate to server (%s)" % url_e.reason)
+
 
     # Analyse return message.
     # pylint: disable=W0612
     txt, part, tail = msg.partition("`")
     if not part:            # Message doesn't contain the sep character "`"
-        handle_exception("Error: login: server return message not understood "
-                "(%s)" % msg)
+        error("login", "server return message not understood (%s)" % msg)
 
     if UIDRE.match(txt):    # We got the uid
         try:
             write_uid(txt, fname)
         except IOError as io_e:
-            handle_exception("Error: login: can't write UID file (%s)" % io_e)
+            error("login", "can't write UID file (%s)" % io_e)
     else:                   # Should be exception message from server
-        handle_server_exception("login", txt)
+        error("login", txt, server=True)
         # And leave the uid file alone, if exist
 
     return None
@@ -396,19 +395,22 @@ def logout(cfg):
     try:
         uid = read_uid(fname)
     except IOError as io_e:
-        handle_exception("Error: logout: can't read from UID file (%s)" % io_e)
-    except ValueError as val_e:
-        handle_exception("Error: logout: %s" % val_e)
+        error("logout", "can't read from UID file (%s)" % io_e)
+    except ValueError as val_e:  # read_uid() reads non-uid
+        error("logout", "%s" % val_e)
 
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
 
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
 
-    msg = communicate_to_server(url, logout_postdata)
+    try:
+        msg = communicate_to_server(url, logout_postdata)
+    except urllib2.URLError as url_e:
+        error("logout", "can't communicate to server (%s)" % url_e.reason)
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
-        handle_server_exception("logout", s)
+        error("logout", s, server=True)
     return None
 
 
@@ -421,38 +423,42 @@ def kick(cfg):
             "password": cfg["password"]}
     kick_postdata = urlencode(kick_data)
 
-    msg = communicate_to_server(url, kick_postdata)
+    try:
+        msg = communicate_to_server(url, kick_postdata)
+    except urllib2.URLError as url_e:
+        error("kick", "can't communicate to server (%s)" % url_e.reason)
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
-        handle_server_exception("kick", s)
+        error("kick", s, server=True)
     return None
 
 
-def handle_server_exception(prefix, txt):
-    """Handle the error message returned by the server.
+def error(prefix, txt, server=False, fail=True):
+    """Do error messaging.
 
-    If the error is understood, print the corresponding human-readable
-    error message with prefix prefixed to standard error.  If the error
-    message is not understood, raise RuntimeError with the message echoed.
+    prefix announces which component has failed.  txt is a text message
+    describing the specific failure.
 
-    In either case, the program fails and exits.
+    The flag server should be set to True if the exception is notified by
+    the server.
+
+    If fail is True, call sys.exit() to exit with failure, otherwise don't
+    exit and return the message printed.
 
     """
-    if txt in ERRMSG:
-        # We don't raise RuntimeError, because this is something the program
-        # understands.
-        msg = "Error: %s: server indicates error: %s" % (prefix, ERRMSG[txt])
+    if server:
+        if txt in ERRMSG:
+            msg = "Error: %s: server indicates error: %s" % (prefix,
+                    ERRMSG[txt])
+        else:
+            msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
     else:
-        msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
-    handle_exception(msg)
-
-
-def handle_exception(txt):
-    """Generic exception handler."""
-
-    # Doesn't actually handle, just report and crash.
-    print >> sys.stderr, "%s" % txt
-    sys.exit(1)
+        msg = "Error: %s: %s" % (prefix, txt)
+    print >> sys.stderr, "%s" % msg
+    if fail:
+        sys.exit(1)
+    else:
+        return msg
 
 
 def show_usage_and_fail():
