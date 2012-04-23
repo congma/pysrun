@@ -142,4 +142,4 @@ BSD许可证, 见文件COPYRIGHT.
 
 ## 版本信息
 
-2012-04-XX version 0.5-devel.
+2012-04-23 version 0.5.
