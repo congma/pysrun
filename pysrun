@@ -345,7 +345,7 @@ def write_uid(uid, uid_path):
     return None
 
 
-def communicate_to_server(url, postdata):
+def communicate_to_server(url, postdata, prefix):
     """Communicate to the authentication/app gateway server by HTTP messages,
     with data sent using the POST method.
 
@@ -353,7 +353,10 @@ def communicate_to_server(url, postdata):
     caller to decide what to do with the document.
 
     """
-    f = urllib2.urlopen(url, postdata)
+    try:
+        f = urllib2.urlopen(url, postdata)
+    except urllib2.URLError as url_e:
+        error(prefix, "can't communicate to server (%s)" % url_e.reason)
     msg = f.read()
     f.close()
     return msg
@@ -377,10 +380,7 @@ def login(cfg):
     login_postdata = urlencode(login_data)
     # Send data and receive response.
     # Expect either uid or server exception message.
-    try:
-        msg = communicate_to_server(url, login_postdata)
-    except urllib2.URLError as url_e:
-        error("login", "can't communicate to server (%s)" % url_e.reason)
+    msg = communicate_to_server(url, login_postdata, "login")
     # Analyse return message.
     # pylint: disable=W0612
     txt, part, tail = msg.partition("`")
@@ -410,10 +410,7 @@ def logout(cfg):
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
-    try:
-        msg = communicate_to_server(url, logout_postdata)
-    except urllib2.URLError as url_e:
-        error("logout", "can't communicate to server (%s)" % url_e.reason)
+    msg = communicate_to_server(url, logout_postdata, "logout")
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("logout", s, server=True)
@@ -427,10 +424,7 @@ def kick(cfg):
     kick_data = {"username": cfg["username"],
             "password": cfg["password"]}
     kick_postdata = urlencode(kick_data)
-    try:
-        msg = communicate_to_server(url, kick_postdata)
-    except urllib2.URLError as url_e:
-        error("kick", "can't communicate to server (%s)" % url_e.reason)
+    msg = communicate_to_server(url, kick_postdata, "kick")
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("kick", s, server=True)
