@@ -83,9 +83,10 @@ pysrun 是用Python编写的北师大上网认证网关客户端.
 
 ### 登入, 登出和强制离线操作
 
-1. 登入: 使用`pysrun login`命令. 登入成功后将安静地退出.
-2. 登出: 使用`pysrun logout`命令.
+1. 登入: 使用`pysrun login`命令. 登入成功后将安静地退出.  需要提供`username`和`password`选项.
+2. 登出: 使用`pysrun logout`命令.  需要知道uid, 因此须提供`uidfile`选项.
 3. 强制离线: 又称踢人, 即让所有占用这个帐号的IP地址离线, 使用`pysrun kick`命令.
+需要提供`username`和`password`选项.
 
 *注意:* 需要让`pysrun`所在目录在您的`PATH`环境变量中, 否则应使用类似 `./pysrun`
 的绝对路径启动程序.
