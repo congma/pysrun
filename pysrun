@@ -1,14 +1,7 @@
 #!/usr/bin/env python
 """A Python implementation of the SRUN 3000 internet tolling client.
 
-Usage: pysrun {login|logout|kick}
-
-Before starting the program, a configuration file must be saved at the
-path "~/.pysrun.cfg".  As of now, the path to config file is hard-coded.
-This is expected to be fixed in the future.
-
-The configuration file is used to store login credentials and run-time
-options.  An example config file is provided with the default settings.
+Usage: pysrun [OPTIONS] {login|logout|kick}
 
 This program is licensed under the BSD license.  You are free to use it
 or modify it provided the conditions in the license are met. See the file
@@ -505,9 +498,27 @@ def error(prefix, txt, server=False, fail=True):
         return msg
 
 
-def show_usage_and_fail():
-    print >> sys.stderr, "Usage: pysrun {login|logout|kick}"
-    sys.exit(2)
+def show_usage(fail=True):
+    """Show help message.  If fail, the message is written to stderr
+    and the program exits with status 2.  If fail is False, write to stdout
+    and return None.
+
+    """
+    stream = sys.stderr if fail else sys.stdout
+    msglist = ["Usage: pysrun [Options] {login|logout|kick}",
+            "Options:",
+            "  -c FILE       path to configuration file",
+            "  -u USERNAME   account username",
+            "  -p PASSWORD   account password",
+            "  -a ADDRESS    address of authentication server",
+            "  -P PORT       authentication server listening port",
+            "  -i INTERFACE  network interface used for MAC address retrieval",
+            "  -d            show debug output",
+            "  -h            display this message and exit"]
+    print >> stream, "\n".join(msglist)
+    if fail:
+        sys.exit(2)
+    return None
 
 
 def transform_to_config(inputdic):
@@ -525,13 +536,17 @@ def transform_to_config(inputdic):
 
 
 def main():
-    optspec = "c:d"
+    optspec = "hc:d"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     try:
         oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
     except getopt.GetoptError as go_e:
-        error("config", "%s" % go_e)
+        error("config", "%s" % go_e, fail=False)
+        show_usage()
     opdict = dict(oplist)
+    if "-h" in opdict:  # Exit as early as possible if "-h" is in options.
+        show_usage(fail=False)
+        sys.exit(0)
     config_from_cmdline = transform_to_config(opdict)
     config_path = os.path.expanduser(opdict.get("-c", "~/.pysrun.cfg"))
     try:
@@ -547,7 +562,7 @@ def main():
             "kick": kick}
     valid_ops = operation_table.viewkeys() & args
     if len(valid_ops) != 1:  # One and only one operation allowed.
-        show_usage_and_fail()
+        show_usage(fail=True)
     operation_table[valid_ops.pop()](CONFIG)
 
 
