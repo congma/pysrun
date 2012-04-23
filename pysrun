@@ -551,7 +551,7 @@ def main():
         operation_table[the_opr](CONFIG)
     else:
         error("config", "operation \"%s\" requires the option%s %s" \
-                %(the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
+                % (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
                     " and ".join(required_keys[the_opr])))
 
 
