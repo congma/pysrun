@@ -25,20 +25,17 @@ from ctypes.util import find_library
 
 # Regexp for the returned "uid" used by the SRUN server.
 UIDRE = re.compile(r"[0-9]+")  # FIXME: this is only a guess.
-
 # Default configuration option values.
 CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0"}
-
 OPT_CONFIG_MAP = {"-a": "address",
         "-P": "port",
         "-u": "username",
         "-p": "password",
         "-s": "uidfile",
         "-i": "interface"}
-
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
         "password_error": "invalid password",
@@ -51,12 +48,10 @@ ERRMSG = {"username_error": "invalid username",
         # a wrong password
         "logout_error": "cannot force logout (already logged out?)",
         "uid_error": "session ID mismatch"}  # uid_error could occur on logout
-
 # NOTE: Calling find_library to locate the dynamc C library will create
 # external processes.  I think I'm better just do it once.
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
 LIBC = CDLL(LIBC_NAME)
-
 PLATFORM = uname()[0].lower()
 
 
@@ -182,9 +177,7 @@ else:
     # Currently, this is true for all BSDs we consider.
     # http://www.freebsd.org/doc/en/books/developers-handbook/sockets-essential-functions.html
     AF_LINK = 18
-
-
-# The values are tuples organized in the following manner:
+# The values of the lookup table are tuples organized in the following manner:
 # Index 0: The equivalent of struct ifaddrs, see ifaddrs.h, getifaddrs(3).
 # Index 1: The equivalent of struct sockaddr_ll (Linux, see netpacket/packet.h)
 #          or sockaddr_dl (BSD, see net/if_dl.h).
@@ -218,7 +211,6 @@ def getmacaddrs():
         name = ifa.ifa_name
         if name not in result:
             result[name] = []
-
         # Some interface (such as a TUN virtual network) doesn't give us
         # ifa_addr at all and we can usually skip them because they're hardly
         # relevant for our usage case.
@@ -229,14 +221,12 @@ def getmacaddrs():
                 addr = "%s" % si
                 if addr:
                     result[name].append(addr)
-
         if ifa.ifa_next:
             ifa = ifaddrs.from_address(ifa.ifa_next)
         else:
             break
 
     LIBC.freeifaddrs(ptr)
-
     return result
 
 
@@ -268,7 +258,6 @@ def read_config_file(path, warn=False):
     ignoring them.  Default: False.
 
     Returns a dictionary of config options.
-
 
     """
     lineno = 0
@@ -348,8 +337,9 @@ def pfilter(line):
 
 def read_uid(uid_path):
     """Search in the uid_path file for the uid used to end a session.  Stop and
-    return on first match."""
+    return on first match.
 
+    """
     fh = open(uid_path, "r")
     for line in fh:
         bline = line.strip()
@@ -384,7 +374,6 @@ def communicate_to_server(url, postdata):
 def login(cfg):
     """The login sequence."""
 
-    # Gather login data
     fname = expanduser(cfg["uidfile"])
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
     try:
@@ -398,21 +387,17 @@ def login(cfg):
         "n": "99",
         "mac": tamper_hwaddress(mac)}
     login_postdata = urlencode(login_data)
-
     # Send data and receive response.
     # Expect either uid or server exception message.
     try:
         msg = communicate_to_server(url, login_postdata)
     except urllib2.URLError as url_e:
         error("login", "can't communicate to server (%s)" % url_e.reason)
-
-
     # Analyse return message.
     # pylint: disable=W0612
     txt, part, tail = msg.partition("`")
     if not part:            # Message doesn't contain the sep character "`"
         error("login", "server return message not understood (%s)" % msg)
-
     if UIDRE.match(txt):    # We got the uid
         try:
             write_uid(txt, fname)
@@ -421,7 +406,6 @@ def login(cfg):
     else:                   # Should be exception message from server
         error("login", txt, server=True)
         # And leave the uid file alone, if exist
-
     return None
 
 
@@ -435,12 +419,9 @@ def logout(cfg):
         error("logout", "can't read from UID file (%s)" % io_e)
     except ValueError as val_e:  # read_uid() reads non-uid
         error("logout", "%s" % val_e)
-
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
-
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
-
     try:
         msg = communicate_to_server(url, logout_postdata)
     except urllib2.URLError as url_e:
@@ -455,11 +436,9 @@ def kick(cfg):
     """Kick all users using the account."""
 
     url = "http://%s:%s/cgi-bin/force_logout" % (cfg["address"], cfg["port"])
-
     kick_data = {"username": cfg["username"],
             "password": cfg["password"]}
     kick_postdata = urlencode(kick_data)
-
     try:
         msg = communicate_to_server(url, kick_postdata)
     except urllib2.URLError as url_e:
