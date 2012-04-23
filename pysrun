@@ -503,6 +503,11 @@ def transform_to_config(inputdic):
     return result
 
 
+def isvalidport(txt):
+    """Returns True if txt represents a valid TCP port (in dec)."""
+    return txt.isdigit() and int(txt) <= 65535 and int(txt) >= 0
+
+
 def main():
     optspec = "hc:d"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
@@ -521,16 +526,19 @@ def main():
         config_from_file = read_config_file(config_path, warn=("-d" in opdict))
     except IOError as io_e:
         error("config", "can't read configuration file (%s)" % io_e)
-    # Overriding priorities: command-line > config file > defaults.
-    CONFIG.update(config_from_file)
-    CONFIG.update(config_from_cmdline)
-
+    # Determine operation from cmdline, fail if none find.
     operation_table = {"login": login,
             "logout": logout,
             "kick": kick}
     valid_ops = operation_table.viewkeys() & args
     if len(valid_ops) != 1:  # One and only one operation allowed.
-        show_usage(fail=True)
+        show_usage()
+    # Overriding priorities: command-line > config file > defaults.
+    CONFIG.update(config_from_file)
+    CONFIG.update(config_from_cmdline)
+    if not isvalidport(CONFIG["port"]):
+        error("config", "invalid port number (%s)" % CONFIG["port"])
+
     operation_table[valid_ops.pop()](CONFIG)
 
 
