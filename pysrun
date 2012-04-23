@@ -465,6 +465,14 @@ def error(prefix, txt, server=False, fail=True):
         return msg
 
 
+def have(keylist, dic):
+    """Check whether all keys in keylist are present in dic and all keys
+    has values evaluating to True.
+
+    """
+    return all(key in dic and dic[key] for key in keylist)
+
+
 def show_usage(fail=True):
     """Show help message.  If fail, the message is written to stderr
     and the program exits with status 2.  If fail is False, write to stdout
@@ -511,6 +519,7 @@ def isvalidport(txt):
 def main():
     optspec = "hc:d"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
+    # Get options and arguments, emit help message on bad options.
     try:
         oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
     except getopt.GetoptError as go_e:
@@ -520,26 +529,36 @@ def main():
     if "-h" in opdict:  # Exit as early as possible if "-h" is in options.
         show_usage(fail=False)
         sys.exit(0)
+    # Determine the operation from cmdline, fail if none find.
+    operation_table = {"login": login,
+            "logout": logout,
+            "kick": kick}
+    valid_oprs = operation_table.viewkeys() & args
+    if len(valid_oprs) != 1:  # One and only one operation allowed.
+        show_usage()
+    the_opr = valid_oprs.pop()
+    # Update config info from all sources we have.
     config_from_cmdline = transform_to_config(opdict)
     config_path = os.path.expanduser(opdict.get("-c", "~/.pysrun.cfg"))
     try:
         config_from_file = read_config_file(config_path, warn=("-d" in opdict))
     except IOError as io_e:
         error("config", "can't read configuration file (%s)" % io_e)
-    # Determine operation from cmdline, fail if none find.
-    operation_table = {"login": login,
-            "logout": logout,
-            "kick": kick}
-    valid_ops = operation_table.viewkeys() & args
-    if len(valid_ops) != 1:  # One and only one operation allowed.
-        show_usage()
     # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
     CONFIG.update(config_from_cmdline)
+    # Validation of config and its values.
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"])
-
-    operation_table[valid_ops.pop()](CONFIG)
+    required_keys = {"login": ["username", "password"],
+            "logout": ["uidfile"],
+            "kick": ["username", "password"]}
+    if have(required_keys[the_opr], CONFIG):
+        operation_table[the_opr](CONFIG)
+    else:
+        error("config", "operation \"%s\" requires the option%s %s" \
+                %(the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
+                    " and ".join(required_keys[the_opr])))
 
 
 if __name__ == "__main__":
