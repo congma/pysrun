@@ -480,6 +480,7 @@ def show_usage(fail=True):
             "  -a ADDRESS    address of authentication server",
             "  -P PORT       authentication server listening port",
             "  -i INTERFACE  network interface used for MAC address retrieval",
+            "  -s FILE       path to session UID storage file",
             "  -d            show debug output",
             "  -h            display this message and exit"]
     print >> stream, "\n".join(msglist)
