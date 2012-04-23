@@ -17,6 +17,8 @@ COPYRIGHT.
 
 """
 import sys
+import getopt
+import os.path
 import re
 from urllib import urlencode
 import urllib2
@@ -36,6 +38,13 @@ CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0"}
+
+OPT_CONFIG_MAP = {"-a": "address",
+        "-P": "port",
+        "-u": "username",
+        "-p": "password",
+        "-s": "uidfile",
+        "-i": "interface"}
 
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
@@ -278,35 +287,70 @@ def read_config_file(path, warn=False):
             record = pfilter(line)
         except CfgLineIsBlank:
             continue
-        if warn and not record:
-            print >> sys.stderr, "Warning: %s: line %d: garbage in" \
-                        % (path, lineno)
+        except CfgLineIsGarbage as g:
+            if warn:
+                print >> sys.stderr, \
+                        "Warning: %s: line %d: column %d: garbage in\n%s" \
+                        % (path, lineno, g.col, g)
+            continue
         result.update(record)
     fh.close()
     return result
 
 
 class CfgLineIsBlank(ValueError):
+    """Exception class notifying caller that the line being filtered
+    is a blank line, containing only blank characters or comment.
+
+    """
     pass
 
 
-def pfilter(line):
-    """Filter input configuration file line for meaningful key-value pair
-
-    FIXME: Explain the rules here.
+class CfgLineIsGarbage(ValueError):
+    """Exception class notifying the caller that the line being filtered
+    is a garbage line.
 
     """
-    text = line.rsplit("#")[0]  # First hash ('#') starts a comment.
+    def __init__(self, text, offending_col):
+        """text should be the culprit text for which warning is issued
+        offending_col should be the no. of the first offending column.
+
+        """
+        super(CfgLineIsGarbage, self).__init__(text, offending_col)
+        self.text = text
+        self.col = offending_col
+        return None
+
+    def __str__(self):
+        """Returns a two-line representation of the culprit line.  The first
+        output line is a copy of the line with trailing whitespace removed
+        to save screen space.  The second line is used to show a cursor mark
+        pointing to the first offending column.
+
+        """
+        return "%s\n" % self.text + " " * self.col + "^"
+
+
+def pfilter(line):
+    """Filter input configuration file line for meaningful key-value pair.
+
+    See README for the format definition.
+
+    """
+    text = line.split("#")[0]  # First hash ('#') starts a comment.
     if not text.strip():  # Skip blank line and notify caller.
         raise CfgLineIsBlank
+    bareline = line.rstrip()
     key, sep, val = text.partition("=")
     if not sep:  # Lines not containing the equal sign ('=') are discarded.
-        return {}
-    key = key.strip()
-    val = val.strip()
-    if not (key and val):  # NOTE: Prevent empty value.  This may change...
-        return {}
-    return {key: val}
+        raise CfgLineIsGarbage(bareline, len(bareline))
+    nkey = key.strip()
+    nval = val.strip()
+    if not nkey:
+        raise CfgLineIsGarbage(bareline, len(key))
+    elif not nval:  # NOTE: Prevent empty value.  This may change...
+        raise CfgLineIsGarbage(bareline, len(bareline))
+    return {nkey: nval}
 
 
 def read_uid(uid_path):
@@ -466,25 +510,45 @@ def show_usage_and_fail():
     sys.exit(2)
 
 
+def transform_to_config(inputdic):
+    """Translate the keys in inputdic to the corresponding config
+    dictionary key name.
+
+    Returns the transformed dictionary object useful for updating the config
+    dictionary.
+    """
+    result = {}
+    for key, value in inputdic.iteritems():
+        if key in OPT_CONFIG_MAP:
+            result[OPT_CONFIG_MAP[key]] = value
+    return result
+
+
 def main():
+    optspec = "c:d"
+    optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     try:
-        op = sys.argv[1]
-    except IndexError:
-        show_usage_and_fail()
-
-    #FIXME: this shouldn't be hard-coded.
-    config_path = expanduser("~/.pysrun.cfg")
-    config_from_file = read_config_file(config_path)
+        oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
+    except getopt.GetoptError as go_e:
+        error("config", "%s" % go_e)
+    opdict = dict(oplist)
+    config_from_cmdline = transform_to_config(opdict)
+    config_path = os.path.expanduser(opdict.get("-c", "~/.pysrun.cfg"))
+    try:
+        config_from_file = read_config_file(config_path, warn=("-d" in opdict))
+    except IOError as io_e:
+        error("config", "can't read configuration file (%s)" % io_e)
+    # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
+    CONFIG.update(config_from_cmdline)
 
-    if op == "login":
-        login(CONFIG)
-    elif op == "logout":
-        logout(CONFIG)
-    elif op == "kick":
-        kick(CONFIG)
-    else:
+    operation_table = {"login": login,
+            "logout": logout,
+            "kick": kick}
+    valid_ops = operation_table.viewkeys() & args
+    if len(valid_ops) != 1:  # One and only one operation allowed.
         show_usage_and_fail()
+    operation_table[valid_ops.pop()](CONFIG)
 
 
 if __name__ == "__main__":
