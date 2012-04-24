@@ -12,6 +12,7 @@ COPYRIGHT.
 import sys
 import getopt
 import os.path
+import getpass
 from urllib import urlencode
 import urllib2
 from os import uname
@@ -477,6 +478,7 @@ def show_usage(fail=True):
     msglist = ["Usage: pysrun [Options] {login|logout|kick}",
             "Options:",
             "  -c FILE       path to configuration file",
+            "  -I            propmt interactively for password",
             "  -u USERNAME   account username",
             "  -p PASSWORD   account password",
             "  -a ADDRESS    address of authentication server",
@@ -511,7 +513,7 @@ def isvalidport(txt):
 
 
 def main():
-    optspec = "hc:d"
+    optspec = "hc:dI"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     # Get options and arguments, emit help message on bad options.
     try:
@@ -541,6 +543,9 @@ def main():
     # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
     CONFIG.update(config_from_cmdline)
+    # Interactive password overrides all other forms of password input.
+    if "-I" in opdict and the_opr != "logout":
+        CONFIG["password"] = getpass.getpass()
     # Validation of config and its values.
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"])
