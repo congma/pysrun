@@ -1,13 +1,13 @@
-[Server]
+# Server
 address=172.16.202.201	# Hostname or IP address of authentication server
 port=3333		# Server-side listening port
 
-[Client]
+# Client
 interface=eth0		# Network interface whose MAC address will be sent
 
-[Account]
+# Account
 username=		# User name
 password=		# Password
 
-[Session]
+# Session
 uidfile=~/.pysrun_uid	# Path to the session UID storage file
