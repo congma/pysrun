@@ -341,7 +341,6 @@ def read_uid(uid_path):
 
 def write_uid(uid, uid_path):
     fh = open(uid_path, "w")
-    fh.truncate(0)
     fh.write("%s\n" % uid)
     fh.close()
     return None
