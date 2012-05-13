@@ -28,6 +28,7 @@ CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0"}
+# Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
         "-P": "port",
         "-u": "username",
