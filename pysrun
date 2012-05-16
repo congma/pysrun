@@ -11,7 +11,6 @@ COPYRIGHT.
 """
 import sys
 import getopt
-import os.path
 import getpass
 from urllib import urlencode
 import urllib2
@@ -268,9 +267,8 @@ def read_config_file(path, warn=False):
             record = pfilter(line)
         except CfgLineIsGarbage as g:
             if warn and not g.isblank:
-                print >> sys.stderr, \
-                        "Debug: %s: line %d: column %d: garbage in\n%s" \
-                        % (path, lineno, g.col, g)
+                print >> sys.stderr, ("Debug: %s: line %d: column %d: "
+                        "garbage in\n%s" % (path, lineno, g.col, g))
             continue
         result.update(record)
     fh.close()
@@ -535,7 +533,7 @@ def main():
     the_opr = valid_oprs.pop()
     # Update config info from all sources we have.
     config_from_cmdline = transform_to_config(opdict)
-    config_path = os.path.expanduser(opdict.get("-c", "~/.pysrun.cfg"))
+    config_path = expanduser(opdict.get("-c", "~/.pysrun.cfg"))
     try:
         config_from_file = read_config_file(config_path, warn=("-d" in opdict))
     except IOError as io_e:
@@ -555,8 +553,8 @@ def main():
     if have(required_keys[the_opr], CONFIG):
         operation_table[the_opr](CONFIG)
     else:
-        error("config", "operation \"%s\" requires the option%s %s" \
-                % (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
+        error("config", "operation \"%s\" requires the option%s %s" %
+                (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
                     " and ".join(required_keys[the_opr])))
 
 
