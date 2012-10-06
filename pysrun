@@ -44,7 +44,7 @@ ERRMSG = {"username_error": "invalid username",
         "sync_error": "server sync not complete, try later",
         # logout_error seems to only occur when you do a kick with
         # no user online
-        "logout_error": "cannot force logout (already logged out?)",
+        "logout_error": "can't force logout (nobody logged in?)",
         "uid_error": "session ID mismatch"}  # uid_error could occur on logout
 # NOTE: Calling find_library to locate the dynamc C library will create
 # external processes.  I think I'm better just do it once.
@@ -355,7 +355,8 @@ def communicate_to_server(url, postdata, prefix):
     try:
         f = urllib2.urlopen(url, postdata)
     except urllib2.URLError as url_e:
-        error(prefix, "can't communicate to server (%s)" % url_e.reason)
+        error(prefix, "can't communicate to server (%s)" % url_e.reason,
+                exitcode=4)
     msg = f.read()
     f.close()
     return msg
@@ -369,7 +370,8 @@ def login(cfg):
     try:
         mac = get_hwaddress(cfg["interface"])
     except ValueError as val_e:
-        error("login", "no MAC address information for interface (%s)" % val_e)
+        error("login", "no MAC address information for interface (%s)" % val_e,
+                exitcode=4)
     login_data = {"username": cfg["username"],
         "password": cfg["password"],
         "drop": "0",
@@ -384,13 +386,19 @@ def login(cfg):
     # pylint: disable=W0612
     txt, part, tail = msg.partition("`")
     if not part:            # Message doesn't contain the sep character "`"
-        error("login", "server return message not understood (%s)" % msg)
+        error("login", "server return message not understood (%s)" % msg,
+                exitcode=8)
     if txt.isdigit():    # We got the uid
         try:
             write_uid(txt, fname)
         except IOError as io_e:
-            error("login", "can't write UID file (%s)" % io_e)
-    else:                   # Should be exception message from server
+            # This should not be an error, but a warning.  Log-in succeeds
+            # anyway, you just can't store the uid.
+            boiler = "Warning: login:"
+            print >> sys.stderr, "%s can't write UID file (%s)" % (boiler,
+                io_e)
+            print >> sys.stderr, "%s the uid is: %s" % (boiler, txt)
+    else:  # Should be exception message from server
         error("login", txt, server=True)
         # And leave the uid file alone, if exist
     return None
@@ -403,9 +411,11 @@ def logout(cfg):
     try:
         uid = read_uid(fname)
     except IOError as io_e:
-        error("logout", "can't read from UID file (%s)" % io_e)
+        error("logout", "can't read from UID file (%s)" % io_e,
+                exitcode=4)
     except ValueError as val_e:  # read_uid() reads non-uid
-        error("logout", "%s" % val_e)
+        error("logout", "%s" % val_e,
+                exitcode=2)
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
@@ -430,17 +440,20 @@ def kick(cfg):
     return None
 
 
-def error(prefix, txt, server=False, fail=True):
+def error(prefix, txt, server=False, exit=True, exitcode=2):
     """Do error messaging.
 
     prefix announces which component has failed.  txt is a text message
     describing the specific failure.
 
-    The flag server should be set to True if the exception is notified by
-    the server.
+    If exit is True, call sys.exit() to exit with exitcode, otherwise don't
+    exit and return the message printed.  If exit is False, exitcode is
+    ignored.
 
-    If fail is True, call sys.exit() to exit with failure, otherwise don't
-    exit and return the message printed.
+    The flag server should be set to True if the exception is notified by
+    the server.  This causes the pretty-printer to do some extra formatting
+    and always exit with code 1.  Therefore, when server is True, exit and
+    exitcode has no effect.
 
     """
     if server:
@@ -449,11 +462,13 @@ def error(prefix, txt, server=False, fail=True):
                     ERRMSG[txt])
         else:
             msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
+        exit = True
+        exitcode = 1
     else:
         msg = "Error: %s: %s" % (prefix, txt)
     print >> sys.stderr, "%s" % msg
-    if fail:
-        sys.exit(1)
+    if exit:
+        sys.exit(exitcode)
     else:
         return msg
 
@@ -517,8 +532,8 @@ def main():
     try:
         oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
     except getopt.GetoptError as go_e:
-        error("config", "%s" % go_e, fail=False)
-        show_usage()
+        error("config", "%s" % go_e, exit=False)
+        show_usage(fail=True)  # be explicit
     opdict = dict(oplist)
     if "-h" in opdict:  # Exit as early as possible if "-h" is in options.
         show_usage(fail=False)
@@ -537,7 +552,8 @@ def main():
     try:
         config_from_file = read_config_file(config_path, warn=("-d" in opdict))
     except IOError as io_e:
-        error("config", "can't read configuration file (%s)" % io_e)
+        error("config", "can't read configuration file (%s)" % io_e,
+                exitcode=4)
     # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
     CONFIG.update(config_from_cmdline)
@@ -546,7 +562,8 @@ def main():
         CONFIG["password"] = getpass.getpass()
     # Validation of config and its values.
     if not isvalidport(CONFIG["port"]):
-        error("config", "invalid port number (%s)" % CONFIG["port"])
+        error("config", "invalid port number (%s)" % CONFIG["port"],
+                exitcode=2)
     required_keys = {"login": ["username", "password"],
             "logout": ["uidfile"],
             "kick": ["username", "password"]}
@@ -555,7 +572,8 @@ def main():
     else:
         error("config", "operation \"%s\" requires the option%s %s" %
                 (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
-                    " and ".join(required_keys[the_opr])))
+                    " and ".join(required_keys[the_opr])),
+                exitcode=2)
 
 
 if __name__ == "__main__":
