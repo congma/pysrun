@@ -100,6 +100,10 @@ pysrun 是用Python编写的北师大上网认证网关客户端.
 使用wlan0界面的MAC地址, 不读取任何配置文件 (即只用默认值), 登入.
 2. `echo 'pysrun kick' | at midnight`  
 通过[`at`][at-man]提交一个定时任务, 在今天半夜时刻踢掉所有在线用户.
+3. 有时候, 在登出或者踢人后立刻重新登录, 服务器会(错误地)认为你已经登录从而返回错误. 这时候只需要等上片刻即可, 或者在bash下使用类似  
+`until pysrun login; do sleep 0.5; done`  
+的命令来自动地反复重试.  如果不想看到每次重试产生的错误信息, 可以将其转接到`/dev/null`:  
+`until pysrun login 2> /dev/null; do sleep 0.5; done`
 
 
 ## 适用系统
@@ -144,4 +148,4 @@ BSD许可证, 见文件COPYRIGHT.
 
 ## 版本信息
 
-2012-04-25 version 0.5.1.
+2012-10-06 version 0.5.2.
