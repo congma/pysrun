@@ -440,13 +440,13 @@ def kick(cfg):
     return None
 
 
-def error(prefix, txt, server=False, exit=True, exitcode=2):
+def error(prefix, txt, server=False, exitp=True, exitcode=2):
     """Do error messaging.
 
     prefix announces which component has failed.  txt is a text message
     describing the specific failure.
 
-    If exit is True, call sys.exit() to exit with exitcode, otherwise don't
+    If exitp is True, call sys.exit() to exit with exitcode, otherwise don't
     exit and return the message printed.  If exit is False, exitcode is
     ignored.
 
@@ -462,12 +462,12 @@ def error(prefix, txt, server=False, exit=True, exitcode=2):
                     ERRMSG[txt])
         else:
             msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
-        exit = True
+        exitp = True
         exitcode = 1
     else:
         msg = "Error: %s: %s" % (prefix, txt)
     print >> sys.stderr, "%s" % msg
-    if exit:
+    if exitp:
         sys.exit(exitcode)
     else:
         return msg
@@ -532,7 +532,7 @@ def main():
     try:
         oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
     except getopt.GetoptError as go_e:
-        error("config", "%s" % go_e, exit=False)
+        error("config", "%s" % go_e, exitp=False)
         show_usage(fail=True)  # be explicit
     opdict = dict(oplist)
     if "-h" in opdict:  # Exit as early as possible if "-h" is in options.
