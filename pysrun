@@ -544,7 +544,7 @@ def main():
             "kick": kick}
     valid_oprs = operation_table.viewkeys() & args
     if len(valid_oprs) != 1:  # One and only one operation allowed.
-        show_usage()
+        show_usage(fail=True)
     the_opr = valid_oprs.pop()
     # Update config info from all sources we have.
     config_from_cmdline = transform_to_config(opdict)
