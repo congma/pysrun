@@ -14,8 +14,9 @@ import getopt
 import getpass
 from urllib import urlencode
 import urllib2
-from os import uname
+import os
 from os.path import expanduser
+import socket
 import time
 # pylint: disable=W0401
 # pylint: disable=W0614
@@ -53,7 +54,7 @@ ERRMSG = {"username_error": "invalid username",
 # external processes.  I think I'm better just do it once.
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
 LIBC = CDLL(LIBC_NAME)
-PLATFORM = uname()[0].lower()
+PLATFORM = os.uname()[0].lower()
 
 
 # Implementation of getifaddrs()-based MAC functions.
@@ -434,6 +435,8 @@ def login(cfg):
         # Analyse return message.
         try:    # Try as message of success
             num_info = _get_info_from_msg(msg)
+            # XXX
+            print num_info
         except ValueError:  # Not a message of success
             # Then try decoding as password_error@timestamp format
             try:
@@ -443,6 +446,7 @@ def login(cfg):
             # XXX hard-coded
             time.sleep(1)
             n_attempt += 1
+            continue    # not needed -- for clarity only
         else:   # Success with getting the uid
             # Write uid to file
             try:
@@ -455,7 +459,23 @@ def login(cfg):
                         "%s can't write UID file (%s)" % (boiler, io_e)
                 print >> sys.stderr, \
                         "%s the uid is: %s" % (boiler, num_info[0])
-            return None
+            # XXX Forking into background a heartbeat keeper.
+            try:
+                pid = os.fork()
+            except OSError as os_e:
+                error("login", os_e, server=False, exitp=True, exitcode=4)
+            if pid: # parent
+                # XXX
+                print pid
+                # Store heartbeater pid into file
+                lockfh = open(expanduser("~/.pysrun_pid"), "w")
+                lockfh.write("%d" % pid)
+                lockfh.close()
+                return None
+            else:   # child
+                beat_message = "\x27\x36\x00\x00\xc7\x50\x00\x00"
+                _heartbeat(cfg["address" ], beat_message)
+                # The child will be locked in the _heartbeat function.
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
@@ -519,6 +539,15 @@ def _legacy_login(fname, url, mac, cfg):
         error("login", txt, server=True)
         # And leave the uid file alone, if exist
     return None
+
+
+def _heartbeat(address, message):
+    """Once-per-minute UDP heartbeat."""
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    while True:
+        time.sleep(60)
+        sock.sendto(message, (address, 3335))
 
 
 def logout(cfg):
