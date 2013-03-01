@@ -499,7 +499,10 @@ def _try_kill_release(pidfile):
     else:   # pid file present
         daemon_pid = int(pidf.readline().strip())
         pidf.close()
-        os.kill(daemon_pid, signal.SIGTERM)
+        try:
+            os.kill(daemon_pid, signal.SIGTERM)
+        except OSError:
+            pass
         os.unlink(pidfile)
 
 
