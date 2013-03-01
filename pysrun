@@ -16,6 +16,7 @@ from urllib import urlencode
 import urllib2
 from os import uname
 from os.path import expanduser
+import time
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -26,7 +27,8 @@ from ctypes.util import find_library
 CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
-        "interface": "eth0"}
+        "interface": "eth0",
+        "islegacylogin": False}
 # Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
         "-P": "port",
@@ -345,6 +347,42 @@ def write_uid(uid, uid_path):
     return None
 
 
+def encode_txt(plaintxt, keytxt):
+    """Encode the password for sending using type=2 operation mode.
+
+    Ref: http://blog.sskaje.me/2009/04/srun3000.html
+
+    """
+    # Truncate or pad the key up to the length of plaintxt.
+    if len(keytxt) >= len(plaintxt):
+        padded_key = keytxt[0:len(plaintxt)]
+    else:
+        padded_key = keytxt * (len(plaintxt) / len(keytxt))
+        padded_key += keytxt[0:len(plaintxt) % len(keytxt)]
+    # Take the ASCII of both strings
+    ordder = lambda s: [ord(c) for c in s]
+    plain_asc = ordder(plaintxt)
+    key_asc = ordder(padded_key)
+    tmp = map(lambda x, y: x ^ y, plain_asc, key_asc)
+    res = []
+    for i in xrange(len(tmp)):
+        lowpar = chr((tmp[i] & 0x0f) + 0x36)
+        hipar = chr(((tmp[i] & 0xf0) >> 4) + 0x63)
+        if i % 2:   # if odd index
+            sec = "%s%s" % (hipar, lowpar)
+        else:
+            sec = "%s%s" % (lowpar, hipar)
+        res.append(sec)
+    return "".join(res)
+
+
+def makekey(unixtime, offset=0):
+    """Returns the key based on the UNIX time and the given offset."""
+
+    kstr = "%d" % ((unixtime + offset) / 60)
+    return kstr[::-1]
+
+
 def communicate_to_server(url, postdata, prefix):
     """Communicate to the authentication/app gateway server by HTTP messages,
     with data sent using the POST method.
@@ -373,10 +411,88 @@ def login(cfg):
     except ValueError as val_e:
         error("login", "no MAC address information for interface (%s)" % val_e,
                 exitcode=4)
+    if cfg["islegacylogin"]:    # legacy mode login
+        _legacy_login(fname, url, mac, cfg)
+        return None
+    # type=2 (non-legacy) mode
+    login_data = {"username": cfg["username"],
+        "drop": "0",
+        "type": "2",
+        "n": "100"}
+    offset = 0
+    n_attempt = 0
+    max_attempt = 3
+    while n_attempt < max_attempt:  # XXX hard-coded, for testing only
+        ourtime = time.time()
+        key = makekey(ourtime, offset)
+        login_data["password"] = encode_txt(cfg["password"], key)
+        login_data["mac"] = encode_txt(mac, key)
+        login_postdata = urlencode(login_data)
+        # Send data and receive response.
+        # Expect either uid or server exception message.
+        msg = communicate_to_server(url, login_postdata, "login")
+        # Analyse return message.
+        try:    # Try as message of success
+            num_info = _get_info_from_msg(msg)
+        except ValueError:  # Not a message of success
+            # Then try decoding as password_error@timestamp format
+            try:
+                offset = _get_offset_from_msg(ourtime, msg)
+            except ValueError:  # Not in password_error@timestamp
+                break
+            # XXX hard-coded
+            time.sleep(1)
+            n_attempt += 1
+        else:   # Success with getting the uid
+            # Write uid to file
+            try:
+                write_uid(num_info[0], fname)
+            except IOError as io_e:
+                # This should not be an error, but a warning.  Log-in succeeds
+                # anyway, you just can't store the uid.
+                boiler = "Warning: login:"
+                print >> sys.stderr, \
+                        "%s can't write UID file (%s)" % (boiler, io_e)
+                print >> sys.stderr, \
+                        "%s the uid is: %s" % (boiler, num_info[0])
+            return None
+    # If the program ever reaches here, we have a server-generated error.
+    # We should strip any possible @timestamp tails before signalling.
+    msg += "s"  # sentinel
+    error("login", msg[:msg.find("@")], server=True)
+
+
+def _get_info_from_msg(text):
+    """Get the information from a well-formed message returned for
+    successful login.
+
+    Tentative format is
+    uid, unknown field, bytes left, unknown field possibly 0, timestamp
+
+    """
+    fields = text.split(",")
+    if len(fields) != 5:
+        raise ValueError
+    nums = [int(n) for n in fields]
+    return nums
+
+
+def _get_offset_from_msg(unixtime, text, prefix="password_error@"):
+    """Parse the text, retrieve the timestamp, and calculate the offset."""
+
+    if not text.startswith(prefix):
+        raise ValueError
+    theirtime = int(text[len(prefix):])
+    return theirtime - unixtime
+
+
+def _legacy_login(fname, url, mac, cfg):
+    """Do legacy login and interpret the result accordingly."""
+
     login_data = {"username": cfg["username"],
         "password": cfg["password"],
         "drop": "0",
-        "type": "3",
+        "type": "3",  # legacy mode
         "n": "99",
         "mac": tamper_hwaddress(mac)}
     login_postdata = urlencode(login_data)
@@ -453,18 +569,19 @@ def error(prefix, txt, server=False, exitp=True, exitcode=2):
 
     The flag server should be set to True if the exception is notified by
     the server.  This causes the pretty-printer to do some extra formatting
-    and always exit with code 1.  Therefore, when server is True, exit and
-    exitcode has no effect.
+    and always exit with code 1.  Therefore, when server is True, neither
+    exitp nor exitcode has any effect.
 
     """
     if server:
         if txt in ERRMSG:
             msg = "Error: %s: server indicates error: %s" % (prefix,
                     ERRMSG[txt])
+            exitcode = 1
         else:
             msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
+            exitcode = 8
         exitp = True
-        exitcode = 1
     else:
         msg = "Error: %s: %s" % (prefix, txt)
     print >> sys.stderr, "%s" % msg
@@ -499,6 +616,8 @@ def show_usage(fail=True):
             "  -P PORT       authentication server listening port",
             "  -i INTERFACE  network interface used for MAC address retrieval",
             "  -s FILE       path to session UID storage file",
+            "  -e            use legacy (type=3) login mode\n"
+            "                (may not be supported by server)",
             "  -d            show debug output",
             "  -h            display this message and exit"]
     print >> stream, "\n".join(msglist)
@@ -527,7 +646,7 @@ def isvalidport(txt):
 
 
 def main():
-    optspec = "hc:dI"
+    optspec = "hc:dIe"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     # Get options and arguments, emit help message on bad options.
     try:
@@ -561,6 +680,9 @@ def main():
     # Interactive password overrides all other forms of password input.
     if "-I" in opdict and the_opr != "logout":
         CONFIG["password"] = getpass.getpass()
+    # Legacy mode login?
+    if "-e" in opdict and the_opr == "login":
+        CONFIG["islegacylogin"] = True
     # Validation of config and its values.
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"],
