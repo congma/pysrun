@@ -17,6 +17,7 @@ import urllib2
 import os
 from os.path import expanduser
 import socket
+import signal
 import time
 # pylint: disable=W0401
 # pylint: disable=W0614
@@ -403,7 +404,10 @@ def communicate_to_server(url, postdata, prefix):
 
 
 def login(cfg):
-    """The login sequence."""
+    """The login sequence.  Kill any known background daemon as late
+    as possible.
+
+    """
 
     fname = expanduser(cfg["uidfile"])
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
@@ -459,6 +463,7 @@ def login(cfg):
                         "%s can't write UID file (%s)" % (boiler, io_e)
                 print >> sys.stderr, \
                         "%s the uid is: %s" % (boiler, num_info[0])
+            _try_kill_release(expanduser("~/.pysrun_pid"))
             # XXX Forking into background a heartbeat keeper.
             try:
                 pid = os.fork()
@@ -480,6 +485,22 @@ def login(cfg):
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
     error("login", msg[:msg.find("@")], server=True)
+
+
+def _try_kill_release(pidfile):
+    """Try the lock, kill the daemon if pid present, and release the lock."""
+
+    # XXX: This is quite unsafe, because the stored pid can be reused
+    # after unexpected exit of the daemon.
+    try:
+        pidf = open(pidfile)
+    except IOError as io_e: # Can't open, or no such file.
+        return None
+    else:   # pid file present
+        daemon_pid = int(pidf.readline().strip())
+        pidf.close()
+        os.kill(daemon_pid, signal.SIGTERM)
+        os.unlink(pidfile)
 
 
 def _get_info_from_msg(text):
@@ -544,10 +565,14 @@ def _legacy_login(fname, url, mac, cfg):
 def _heartbeat(address, message):
     """Once-per-minute UDP heartbeat."""
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     while True:
         time.sleep(60)
+        # The original srun client does this, i.e. closing the socket
+        # at the end of each heartbeat cycle.  The server just likes all
+        # those ICMP port unreachable packets...
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(message, (address, 3335))
+        sock.close()
 
 
 def logout(cfg):
@@ -569,6 +594,8 @@ def logout(cfg):
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("logout", s, server=True)
+    else:
+        _try_kill_release(expanduser("~/.pysrun_pid"))
     return None
 
 
@@ -583,6 +610,8 @@ def kick(cfg):
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("kick", s, server=True)
+    else:
+        _try_kill_release(expanduser("~/.pysrun_pid"))
     return None
 
 
