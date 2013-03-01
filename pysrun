@@ -42,6 +42,7 @@ ERRMSG = {"username_error": "invalid username",
         "version_error": "request rejected by server",
         "status_error": "payment required",
         "sync_error": "server sync not complete, try later",
+        "mode_error": "authentication mode disabled by server",
         # logout_error seems to only occur when you do a kick with
         # no user online
         "logout_error": "can't force logout (nobody logged in?)",
