@@ -19,6 +19,7 @@ from os.path import expanduser
 import socket
 import signal
 import time
+import struct
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -478,7 +479,9 @@ def login(cfg):
                 lockfh.close()
                 return None
             else:   # child
-                beat_message = "\x27\x36\x00\x00\xc7\x50\x00\x00"
+                # The beat message appears to be the integer
+                # uid in little rather than network endianness.
+                beat_message = struct.pack("<q", num_info[0])
                 _heartbeat(cfg["address" ], beat_message)
                 # The child will be locked in the _heartbeat function.
     # If the program ever reaches here, we have a server-generated error.
@@ -568,13 +571,28 @@ def _legacy_login(fname, url, mac, cfg):
 def _heartbeat(address, message):
     """Once-per-minute UDP heartbeat."""
 
+    srvaddr = (address, 3335)
     while True:
         time.sleep(60)
         # The original srun client does this, i.e. closing the socket
         # at the end of each heartbeat cycle.  The server just likes all
         # those ICMP port unreachable packets...
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(message, (address, 3335))
+        sock.sendto(message, srvaddr)
+        retmsg = sock.recvfrom(32)
+        if retmsg[1] == srvaddr:    # received message is from server
+            # Don't ask about the endianness...
+            retnum = struct.unpack("<q", retmsg[0][:8])[0]
+            # The useful part appears to be padded with 8 bytes of zeros, hence
+            # the slicing. Usually this number should be the uid, but is -2
+            # when the client has been kicked.
+            if retnum == -2:
+                # Self-destruction. No need to keep heartbeat. To resume
+                # connection one must log-in again.
+                import atexit
+                releaser = lambda: os.unlink(expanduser("~/.pysrun_pid"))
+                atexit.register(releaser)
+                sys.exit(2)
         sock.close()
 
 
