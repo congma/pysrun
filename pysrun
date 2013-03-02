@@ -484,6 +484,11 @@ def login(cfg):
                         "%s the uid is: %s" % (boiler, num_info[0])
             fd = _try_fifo(cfg["fifofile"])
             if fd != -1:    # if daemon present and connected to fifo
+                # The field num_info[4] should be a timestamp for first
+                # log-in and zero if already logged-in using same account.
+                # In this case no further action is needed.
+                if num_info[4] == 0:
+                    return None
                 os.write(fd, "DIE!")
                 os.close(fd)
             # Forking into background a heartbeat keeper.
@@ -510,7 +515,8 @@ def _get_info_from_msg(text):
     successful login.
 
     Tentative format is
-    uid, unknown field, bytes left, unknown field possibly 0, timestamp
+    uid, IP address padded with 8 bytes of status string, bytes left,
+    unknown field possibly 0, timestamp or 0
 
     """
     fields = text.split(",")
@@ -570,6 +576,7 @@ def _heartbeat(cfg, message):
     srvaddr = (cfg["address"], 3335)
     commandfd = os.open(cfg["fifofile"], os.O_RDONLY | os.O_NONBLOCK)
     while True:
+        time.sleep(60)
         try:
             cmd = os.read(commandfd, 4)
         except OSError as os_e:
@@ -591,7 +598,6 @@ def _heartbeat(cfg, message):
                 # connection one must log-in again.
                 sys.exit(0)
         sock.close()
-        time.sleep(60)
 
 
 def logout(cfg):
