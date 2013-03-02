@@ -17,10 +17,9 @@ import urllib2
 import os
 from os.path import expanduser
 import socket
-import signal
+import errno
 import time
 import struct
-import atexit
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -32,6 +31,7 @@ CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0",
+        "fifofile": expanduser("~/.pysrun.fifo"),
         "islegacylogin": False}
 # Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
@@ -405,6 +405,25 @@ def communicate_to_server(url, postdata, prefix):
     return msg
 
 
+def _try_fifo(path):
+    """Try to open fifo for write-only with blocking.  If no such file,
+    create it.  Returns the file descriptor on success
+    and -1 when there is nobody on the other side of the fifo.
+
+    """
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError as os_e:
+        if os_e.errno == errno.ENOENT:   # no such file or directory
+            os.mkfifo(expanduser(path))
+            return -1
+        elif os_e.errno == errno.ENXIO:  # no such address
+            return -1
+        else:
+            raise os_e
+    return fd
+
+
 def login(cfg):
     """The login sequence.  Kill any known background daemon as late
     as possible.
@@ -463,47 +482,27 @@ def login(cfg):
                         "%s can't write UID file (%s)" % (boiler, io_e)
                 print >> sys.stderr, \
                         "%s the uid is: %s" % (boiler, num_info[0])
-            _try_kill_release(expanduser("~/.pysrun_pid"))
-            # XXX Forking into background a heartbeat keeper.
+            fd = _try_fifo(cfg["fifofile"])
+            if fd != -1:    # if daemon present and connected to fifo
+                os.write(fd, "DIE!")
+                os.close(fd)
+            # Forking into background a heartbeat keeper.
             try:
                 pid = os.fork()
             except OSError as os_e:
                 error("login", os_e, server=False, exitp=True, exitcode=4)
             if pid:  # parent
-                # Store heartbeater pid into file
-                lockfh = open(expanduser("~/.pysrun_pid"), "w")
-                lockfh.write("%d" % pid)
-                lockfh.close()
                 return None
             else:  # child
                 # The beat message appears to be the integer
                 # uid in little rather than network endianness.
                 beat_message = struct.pack("<q", num_info[0])
-                _heartbeat(cfg["address"], beat_message)
+                _heartbeat(cfg, beat_message)
                 # The child will be locked in the _heartbeat function.
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
     error("login", msg[:msg.find("@")], server=True)
-
-
-def _try_kill_release(pidfile):
-    """Try the lock, kill the daemon if pid present, and release the lock."""
-
-    # XXX: This is quite unsafe, because the stored pid can be reused
-    # after unexpected exit of the daemon.
-    try:
-        pidf = open(pidfile)
-    except IOError as io_e:  # Can't open, or no such file.
-        return None
-    else:   # pid file present
-        daemon_pid = int(pidf.readline().strip())
-        pidf.close()
-        try:
-            os.kill(daemon_pid, signal.SIGTERM)
-        except OSError:
-            pass
-        os.unlink(pidfile)
 
 
 def _get_info_from_msg(text):
@@ -565,17 +564,19 @@ def _legacy_login(fname, url, mac, cfg):
     return None
 
 
-def _heartbeat(address, message):
+def _heartbeat(cfg, message):
     """Once-per-minute UDP heartbeat."""
 
-    releaser = lambda: os.unlink(expanduser("~/.pysrun_pid"))
-    atexit.register(releaser)
-    srvaddr = (address, 3335)
+    srvaddr = (cfg["address"], 3335)
+    commandfd = os.open(cfg["fifofile"], os.O_RDONLY | os.O_NONBLOCK)
     while True:
-        time.sleep(60)
-        # The original srun client does this, i.e. closing the socket
-        # at the end of each heartbeat cycle.  The server just likes all
-        # those ICMP port unreachable packets...
+        try:
+            cmd = os.read(commandfd, 4)
+        except OSError as os_e:
+            if os_e.errno != errno.EWOULDBLOCK:
+                raise os_e
+        if cmd == "DIE!":
+            sys.exit(0)
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(message, srvaddr)
         retmsg = sock.recvfrom(32)
@@ -590,6 +591,7 @@ def _heartbeat(address, message):
                 # connection one must log-in again.
                 sys.exit(2)
         sock.close()
+        time.sleep(60)
 
 
 def logout(cfg):
@@ -611,8 +613,10 @@ def logout(cfg):
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("logout", s, server=True)
-    else:
-        _try_kill_release(expanduser("~/.pysrun_pid"))
+    else:   # Log-out success
+        fd = _try_fifo(cfg["fifofile"])
+        if fd != -1:
+            os.write(fd, "DIE!")
     return None
 
 
@@ -627,8 +631,10 @@ def kick(cfg):
     s = msg.strip()
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("kick", s, server=True)
-    else:
-        _try_kill_release(expanduser("~/.pysrun_pid"))
+    else:   # Kick success
+        fd = _try_fifo(cfg["fifofile"])
+        if fd != -1:
+            os.write(fd, "DIE!")
     return None
 
 
