@@ -20,6 +20,7 @@ import socket
 import signal
 import time
 import struct
+import atexit
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -468,17 +469,17 @@ def login(cfg):
                 pid = os.fork()
             except OSError as os_e:
                 error("login", os_e, server=False, exitp=True, exitcode=4)
-            if pid: # parent
+            if pid:  # parent
                 # Store heartbeater pid into file
                 lockfh = open(expanduser("~/.pysrun_pid"), "w")
                 lockfh.write("%d" % pid)
                 lockfh.close()
                 return None
-            else:   # child
+            else:  # child
                 # The beat message appears to be the integer
                 # uid in little rather than network endianness.
                 beat_message = struct.pack("<q", num_info[0])
-                _heartbeat(cfg["address" ], beat_message)
+                _heartbeat(cfg["address"], beat_message)
                 # The child will be locked in the _heartbeat function.
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
@@ -493,7 +494,7 @@ def _try_kill_release(pidfile):
     # after unexpected exit of the daemon.
     try:
         pidf = open(pidfile)
-    except IOError as io_e: # Can't open, or no such file.
+    except IOError as io_e:  # Can't open, or no such file.
         return None
     else:   # pid file present
         daemon_pid = int(pidf.readline().strip())
@@ -567,6 +568,8 @@ def _legacy_login(fname, url, mac, cfg):
 def _heartbeat(address, message):
     """Once-per-minute UDP heartbeat."""
 
+    releaser = lambda: os.unlink(expanduser("~/.pysrun_pid"))
+    atexit.register(releaser)
     srvaddr = (address, 3335)
     while True:
         time.sleep(60)
@@ -585,9 +588,6 @@ def _heartbeat(address, message):
             if retnum == -2:
                 # Self-destruction. No need to keep heartbeat. To resume
                 # connection one must log-in again.
-                import atexit
-                releaser = lambda: os.unlink(expanduser("~/.pysrun_pid"))
-                atexit.register(releaser)
                 sys.exit(2)
         sock.close()
 
