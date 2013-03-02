@@ -203,7 +203,7 @@ The programs is available under a BSD license.  See the packaged file COPYRIGHT.
 
 ## VERSION INFORMATION
 
-2012-10-06 version 0.5.2.
+2013-03-02 version 1.0.0-dev2.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
