@@ -95,6 +95,9 @@ alternative path other than the default (`~/.pysrun.cfg`) is used.  Tip: use
 * `-I`: Turns on interactive password prompt.  The password you typed is not
 echoed back.  This is useful if you don't want to store the password.  If
 present, only the interactively typed password is used.
+* `-e`: Use the login mode compatible with the old Linux client.  This mode
+appears to have been disabled as of Mar. 1, 2013.  The current login mode
+emulates that of the Win32 client.  Makes sense only for the login operation.
 * `-d`: Turns on debugging output.
 * `-h`: Display usage help and exit.
 
@@ -112,7 +115,7 @@ this account.  The username and password are required.
 you have to use a fully qualified path to the `pysrun` executable.
 
 
-### Exit code
+### Exit code of the main program
 
 * 0: Program exited successfully.  However, unexpected error may still happen.
 For example, log-in can succeed but the program may fail to write the returned
@@ -127,6 +130,24 @@ from a file, or a specified network interface has no valid MAC address
 information.
 * 8: Malformed answer is received from the server, and the actual result is
 unknown or undefined.
+
+
+### Background process
+
+After successful login, a daemon process will run in background.  It sends
+to the server a heartbeat packet every one minute, keeping the connection alive.
+This is a new feature absent in the old Linux client.  After a new login,
+logout or kick operation the daemon will receive a command to shut down, and
+will do so in one minute.  It will also exit when another user does a kick
+operation successfully.  (Keeping the connection alive after being kicked
+is useless.)
+
+The daemon receives the command from the main program via the named pipe
+`~/.pysrun.fifo`.  Undefined behavior would occur if the file is made
+unavailable during the daemon's lifetime.
+
+The daemon exits with code 0 on normal termination, and a non-zero status
+otherwise.
 
 
 ### Examples
@@ -203,7 +224,7 @@ The programs is available under a BSD license.  See the packaged file COPYRIGHT.
 
 ## VERSION INFORMATION
 
-2013-03-02 version 1.0.0-dev2.
+2013-03-02 version 1.0.0-dev3.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"

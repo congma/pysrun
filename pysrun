@@ -589,7 +589,7 @@ def _heartbeat(cfg, message):
             if retnum == -2:
                 # Self-destruction. No need to keep heartbeat. To resume
                 # connection one must log-in again.
-                sys.exit(2)
+                sys.exit(0)
         sock.close()
         time.sleep(60)
 
