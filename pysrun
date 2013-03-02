@@ -440,8 +440,6 @@ def login(cfg):
         # Analyse return message.
         try:    # Try as message of success
             num_info = _get_info_from_msg(msg)
-            # XXX
-            print num_info
         except ValueError:  # Not a message of success
             # Then try decoding as password_error@timestamp format
             try:
@@ -471,8 +469,6 @@ def login(cfg):
             except OSError as os_e:
                 error("login", os_e, server=False, exitp=True, exitcode=4)
             if pid: # parent
-                # XXX
-                print pid
                 # Store heartbeater pid into file
                 lockfh = open(expanduser("~/.pysrun_pid"), "w")
                 lockfh.write("%d" % pid)
