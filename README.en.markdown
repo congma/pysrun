@@ -134,20 +134,23 @@ unknown or undefined.
 
 ### Background process
 
-After successful login, a daemon process will run in background.  It sends
-to the server a heartbeat packet every one minute, keeping the connection alive.
-This is a new feature absent in the old Linux client.  After a new login,
-logout or kick operation the daemon will receive a command to shut down, and
-will do so in one minute.  It will also exit when another user does a kick
-operation successfully.  (Keeping the connection alive after being kicked
-is useless.)
+After successful login, two daemon processes will run in background.  One
+of them waits on further `login`, `logout` or `kick` commands, and
+the other sends the server a heartbeat packet every one minute, keeping
+the connection alive. This is a new feature absent in the old Linux client. 
+After a new login, logout or kick operation the daemons will receive a command
+to shut down, and will do so immediately.  They will also exit in one minute
+after another user does a kick operation successfully, or the connection
+becomes otherwise unavailable.  (Keeping the connection
+alive after being kicked is useless.)  The daemons monitor each other, and
+one will immediately exit if the other dies.
 
-The daemon receives the command from the main program via the named pipe
-`~/.pysrun.fifo`.  Undefined behavior would occur if the file is made
-unavailable during the daemon's lifetime.
-
-The daemon exits with code 0 on normal termination, and a non-zero status
+The daemons exit with code 0 on normal termination, and a non-zero status
 otherwise.
+
+During normal operation the monitor daemon opens a UNIX domain socket
+at `/tmp/pysrun.socket`.  Undefined behavior would occur if the file is
+made unavailable during the daemon's lifetime.
 
 
 ### Examples
@@ -166,7 +169,7 @@ to automatically retry, if you are sure this is the *only* cause of failure.
 If you don't want to see the spurious error messages, redirect them to
 `/dev/null`:  
 `until pysrun login 2> /dev/null; do sleep 1; done`  
-Even better is actually checking the return code.  The following one-liner will
+Even better is to actually check the return code.  The following one-liner will
 kick and try log in back immediately, with possible retries:  
 ``pysrun kick && while [[ `pysrun login 2> /dev/null; echo $?` -eq 1 ]]; do sleep 1; done``
 
@@ -178,6 +181,8 @@ with BSD variants (including Free/Net/Open/DragonFlyBSD) but remains untested
 for now.
 
 It does not depend on whether the system is 32- or 64-bit.
+
+Python version 2.7 is recommended.
 
 
 ## BACKGROUND INFORMATION
@@ -224,7 +229,7 @@ The programs is available under a BSD license.  See the packaged file COPYRIGHT.
 
 ## VERSION INFORMATION
 
-2013-03-02 version 1.0.0-dev3.
+2013-03-02 version 1.0.0.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
