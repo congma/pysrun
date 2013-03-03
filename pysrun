@@ -573,7 +573,7 @@ def _legacy_login(fname, url, mac, cfg):
 def _heartbeat(cfg, message):
     """Once-per-minute UDP heartbeat."""
 
-    srvaddr = (cfg["address"], 3335)
+    srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
     commandfd = os.open(cfg["fifofile"], os.O_RDONLY | os.O_NONBLOCK)
     while True:
         time.sleep(60)
@@ -586,7 +586,13 @@ def _heartbeat(cfg, message):
             sys.exit(0)
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(message, srvaddr)
-        retmsg = sock.recvfrom(32)
+        # 0.5 seconds of recv timeout should be long enough
+        # for communication and short enough for performance.
+        sock.settimeout(0.5)
+        try:
+            retmsg = sock.recvfrom(32)
+        except socket.timeout:
+            pass    # Ignore it? Don't know what should be done...
         if retmsg[1] == srvaddr:    # received message is from server
             # Don't ask about the endianness...
             retnum = struct.unpack("<q", retmsg[0][:8])[0]
