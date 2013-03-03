@@ -655,8 +655,12 @@ def _ask_daemon_to_die():
 
     """
     controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    controlsock.sendto("DIE", "/tmp/pysrun.sock")
-    controlsock.close()
+    try:
+        controlsock.sendto("DIE", "/tmp/pysrun.sock")
+    except socket.error:
+        pass
+    finally:
+        controlsock.close()
 
 
 def logout(cfg):
