@@ -20,6 +20,9 @@ import socket
 import errno
 import time
 import struct
+import atexit
+import signal
+import select
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -31,7 +34,6 @@ CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0",
-        "fifofile": expanduser("~/.pysrun.fifo"),
         "islegacylogin": False}
 # Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
@@ -405,23 +407,94 @@ def communicate_to_server(url, postdata, prefix):
     return msg
 
 
-def _try_fifo(path):
-    """Try to open fifo for write-only with blocking.  If no such file,
-    create it.  Returns the file descriptor on success
-    and -1 when there is nobody on the other side of the fifo.
+def _announce_peer_exit(sock):
+    """To be registered as atexit hook.  Announce peer exit event
+    via the UDS sock."""
 
-    """
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
-    except OSError as os_e:
-        if os_e.errno == errno.ENOENT:   # no such file or directory
-            os.mkfifo(expanduser(path))
-            return -1
-        elif os_e.errno == errno.ENXIO:  # no such address
-            return -1
-        else:
-            raise os_e
-    return fd
+        sock.send("DEAD")
+    except socket.error:
+        pass
+
+
+def handlerfactory(sock):
+    """Create signal handler that sends exit announcement to sock."""
+
+    def sh(signum, frame):
+        _announce_peer_exit(sock)
+    return sh
+
+
+def unbind_control_sock():
+    """Clean up control socket on exit."""
+
+    try:
+        os.unlink("/tmp/pysrun.sock")
+    except OSError:
+        pass
+
+
+def daemon(cfg, num_info):
+    """Daemon process."""
+
+    psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
+    pid = os.fork()
+    if pid:  # parent
+        csock.close()
+        controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        controlsock.bind("/tmp/pysrun.sock")
+        atexit.register(_announce_peer_exit, psock)
+        atexit.register(unbind_control_sock)
+        shandler = handlerfactory(psock)
+        for sig in siglist:
+            signal.signal(sig, shandler)
+        while True:
+            rs, ws, xs = select.select([psock, controlsock], [], [])
+            if psock in rs and psock.recv(1024) == "DEAD":  # peer exit
+                break
+            if controlsock in rs and controlsock.recv(1024) == "DIE":
+                break
+        sys.exit(0)
+    else:  # child
+        psock.close()
+        atexit.register(_announce_peer_exit, csock)
+        shandler = handlerfactory(psock)
+        for sig in siglist:
+            signal.signal(sig, shandler)
+        csock.settimeout(60)
+        srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
+        uidmsg = struct.pack("<q", num_info[0])
+        while True:
+            try:
+                data = csock.recv(1024)
+            except socket.timeout as so_t:
+                msg = do_heartbeat(srvaddr, uidmsg)
+                if msg == -2:
+                    sys.exit(0)
+            else:
+                if data == "DEAD":  # peer exit
+                    sys.exit(0)
+
+
+def do_heartbeat(srvaddr, message):
+    """Once-per-minute UDP heartbeat."""
+
+    retnum = None
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.sendto(message, srvaddr)
+    # 0.5 seconds of recv timeout should be long enough
+    # for communication and short enough for performance.
+    sock.settimeout(0.5)
+    try:
+        retmsg = sock.recvfrom(32)
+    except socket.timeout:
+        pass    # Ignore it? Don't know what should be done...
+    if retmsg[1] == srvaddr:    # received message is from server
+        # Don't ask about the endianness...
+        retnum = struct.unpack("<q", retmsg[0][:8])[0]
+    sock.close()
+    return retnum
 
 
 def login(cfg):
@@ -482,15 +555,25 @@ def login(cfg):
                         "%s can't write UID file (%s)" % (boiler, io_e)
                 print >> sys.stderr, \
                         "%s the uid is: %s" % (boiler, num_info[0])
-            fd = _try_fifo(cfg["fifofile"])
-            if fd != -1:    # if daemon present and connected to fifo
-                # The field num_info[4] should be a timestamp for first
-                # log-in and zero if already logged-in using same account.
-                # In this case no further action is needed.
-                if num_info[4] == 0:
-                    return None
-                os.write(fd, "DIE!")
-                os.close(fd)
+            controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            try:    # check for anyting left over
+                controlsock.bind("/tmp/pysrun.sock")
+            except socket.error as so_e:
+                if so_e.errno == errno.EADDRINUSE:
+                    # reclaim leftover process
+                    try:
+                        controlsock.sendto("DIE", "/tmp/pysrun.sock")
+                    except socket.error:
+                        pass
+                else:
+                    raise so_e
+            finally:
+                controlsock.close()
+                # reclaim leftover address
+                try:
+                    os.unlink("/tmp/pysrun.sock")
+                except OSError:
+                    pass
             # Forking into background a heartbeat keeper.
             try:
                 pid = os.fork()
@@ -499,11 +582,7 @@ def login(cfg):
             if pid:  # parent
                 return None
             else:  # child
-                # The beat message appears to be the integer
-                # uid in little rather than network endianness.
-                beat_message = struct.pack("<q", num_info[0])
-                _heartbeat(cfg, beat_message)
-                # The child will be locked in the _heartbeat function.
+                daemon(cfg, num_info)
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
@@ -570,40 +649,14 @@ def _legacy_login(fname, url, mac, cfg):
     return None
 
 
-def _heartbeat(cfg, message):
-    """Once-per-minute UDP heartbeat."""
+def _ask_daemon_to_die():
+    """Ask daemon to quit.  Ignore possible socket errors, because
+    we have nothing to do after this.
 
-    srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
-    commandfd = os.open(cfg["fifofile"], os.O_RDONLY | os.O_NONBLOCK)
-    while True:
-        time.sleep(60)
-        try:
-            cmd = os.read(commandfd, 4)
-        except OSError as os_e:
-            if os_e.errno != errno.EWOULDBLOCK:
-                raise os_e
-        if cmd == "DIE!":
-            sys.exit(0)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(message, srvaddr)
-        # 0.5 seconds of recv timeout should be long enough
-        # for communication and short enough for performance.
-        sock.settimeout(0.5)
-        try:
-            retmsg = sock.recvfrom(32)
-        except socket.timeout:
-            pass    # Ignore it? Don't know what should be done...
-        if retmsg[1] == srvaddr:    # received message is from server
-            # Don't ask about the endianness...
-            retnum = struct.unpack("<q", retmsg[0][:8])[0]
-            # The useful part appears to be padded with 8 bytes of zeros, hence
-            # the slicing. Usually this number should be the uid, but is -2
-            # when the client has been kicked.
-            if retnum == -2:
-                # Self-destruction. No need to keep heartbeat. To resume
-                # connection one must log-in again.
-                sys.exit(0)
-        sock.close()
+    """
+    controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    controlsock.sendto("DIE", "/tmp/pysrun.sock")
+    controlsock.close()
 
 
 def logout(cfg):
@@ -626,9 +679,7 @@ def logout(cfg):
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("logout", s, server=True)
     else:   # Log-out success
-        fd = _try_fifo(cfg["fifofile"])
-        if fd != -1:
-            os.write(fd, "DIE!")
+        _ask_daemon_to_die()
     return None
 
 
@@ -644,9 +695,7 @@ def kick(cfg):
     if s != "logout_ok":    # NOTE: Magic constant used.
         error("kick", s, server=True)
     else:   # Kick success
-        fd = _try_fifo(cfg["fifofile"])
-        if fd != -1:
-            os.write(fd, "DIE!")
+        _ask_daemon_to_die()
     return None
 
 
