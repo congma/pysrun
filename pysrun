@@ -595,7 +595,7 @@ def _get_info_from_msg(text):
 
     Tentative format is
     uid, IP address padded with 8 bytes of status string, bytes left,
-    unknown field possibly 0, timestamp or 0
+    unknown field possibly 0, 0 or timestamp of expiry date.
 
     """
     fields = text.split(",")
