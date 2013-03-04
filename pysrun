@@ -44,7 +44,7 @@ OPT_CONFIG_MAP = {"-a": "address",
         "-i": "interface"}
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
-        "password_error": "invalid password",
+        "password_error": "possibly invalid password",
         "ip_exist_error": "already authenticated",
         "online_num_error": "maximal number of online users exceeded",
         "version_error": "request rejected by server",
