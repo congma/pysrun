@@ -450,6 +450,7 @@ def daemon(cfg, num_info):
         for sig in siglist:
             signal.signal(sig, shandler)
         while True:
+            #pylint: disable=W0612
             rs, ws, xs = select.select([psock, controlsock], [], [])
             if psock in rs and psock.recv(1024) == "DEAD":  # peer exit
                 break
