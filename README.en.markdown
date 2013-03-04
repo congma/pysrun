@@ -95,9 +95,6 @@ alternative path other than the default (`~/.pysrun.cfg`) is used.  Tip: use
 * `-I`: Turns on interactive password prompt.  The password you typed is not
 echoed back.  This is useful if you don't want to store the password.  If
 present, only the interactively typed password is used.
-* `-e`: Use the login mode compatible with the old Linux client.  This mode
-appears to have been disabled as of Mar. 1, 2013.  The current login mode
-emulates that of the Win32 client.  Makes sense only for the login operation.
 * `-d`: Turns on debugging output.
 * `-h`: Display usage help and exit.
 
@@ -141,9 +138,9 @@ the connection alive. This is a new feature absent in the old Linux client.
 After a new login, logout or kick operation the daemons will receive a command
 to shut down, and will do so immediately.  They will also exit in one minute
 after another user does a kick operation successfully, or the connection
-becomes otherwise unavailable.  (Keeping the connection
-alive after being kicked is useless.)  The daemons monitor each other, and
-one will immediately exit if the other dies.
+becomes otherwise unavailable.  (Keeping the connection alive after being
+kicked is useless.)  The daemons monitor each other, and one will immediately
+exit if the other dies.
 
 The daemons exit with code 0 on normal termination, and a non-zero status
 otherwise.
@@ -229,7 +226,7 @@ The programs is available under a BSD license.  See the packaged file COPYRIGHT.
 
 ## VERSION INFORMATION
 
-2013-03-04 version 1.0.0.
+2013-03-04 version 1.0.1.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
