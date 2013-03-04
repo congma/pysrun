@@ -178,7 +178,7 @@ class _bsd_ifaddrs(Structure):
 
 # Platform-specific initialization
 if PLATFORM == "linux":
-    from socket import AF_PACKET as AF_LINK
+    AF_LINK = socket.AF_PACKET
 else:
     # According to FreeBSD doc, this is AF_LINK.  See sys/socket.h
     # Currently, this is true for all BSDs we consider.
