@@ -33,8 +33,7 @@ from ctypes.util import find_library
 CONFIG = {"address": "172.16.202.201",
         "port": "3333",
         "uidfile": "~/.pysrun_uid",
-        "interface": "eth0",
-        "islegacylogin": False}
+        "interface": "eth0"}
 # Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
         "-P": "port",
@@ -249,13 +248,6 @@ def get_hwaddress(ifname):
     except (IndexError, KeyError):
         raise ValueError("%s" % ifname)
     return addr
-
-
-def tamper_hwaddress(hwaddress):
-    # For whatever reason, we want to tamper the HW address.
-    # This may just be a bug of the SRUN client, but we decide to maintain
-    # maximal conformance, bug-to-bug.
-    return "ff:ff:%s" % hwaddress[6:]
 
 
 def read_config_file(path, warn=False):
@@ -510,10 +502,6 @@ def login(cfg):
     except ValueError as val_e:
         error("login", "no MAC address information for interface (%s)" % val_e,
                 exitcode=4)
-    if cfg["islegacylogin"]:    # legacy mode login
-        _legacy_login(fname, url, mac, cfg)
-        return None
-    # type=2 (non-legacy) mode
     login_data = {"username": cfg["username"],
         "drop": "0",
         "type": "2",
@@ -612,41 +600,6 @@ def _get_offset_from_msg(unixtime, text, prefix="password_error@"):
         raise ValueError
     theirtime = int(text[len(prefix):])
     return theirtime - unixtime
-
-
-def _legacy_login(fname, url, mac, cfg):
-    """Do legacy login and interpret the result accordingly."""
-
-    login_data = {"username": cfg["username"],
-        "password": cfg["password"],
-        "drop": "0",
-        "type": "3",  # legacy mode
-        "n": "99",
-        "mac": tamper_hwaddress(mac)}
-    login_postdata = urlencode(login_data)
-    # Send data and receive response.
-    # Expect either uid or server exception message.
-    msg = communicate_to_server(url, login_postdata, "login")
-    # Analyse return message.
-    # pylint: disable=W0612
-    txt, part, tail = msg.partition("`")
-    if not part:            # Message doesn't contain the sep character "`"
-        error("login", "server return message not understood (%s)" % msg,
-                exitcode=8)
-    if txt.isdigit():    # We got the uid
-        try:
-            write_uid(txt, fname)
-        except IOError as io_e:
-            # This should not be an error, but a warning.  Log-in succeeds
-            # anyway, you just can't store the uid.
-            boiler = "Warning: login:"
-            print >> sys.stderr, "%s can't write UID file (%s)" % (boiler,
-                io_e)
-            print >> sys.stderr, "%s the uid is: %s" % (boiler, txt)
-    else:  # Should be exception message from server
-        error("login", txt, server=True)
-        # And leave the uid file alone, if exist
-    return None
 
 
 def _ask_daemon_to_die():
@@ -762,8 +715,6 @@ def show_usage(fail=True):
             "  -P PORT       authentication server listening port",
             "  -i INTERFACE  network interface used for MAC address retrieval",
             "  -s FILE       path to session UID storage file",
-            "  -e            use legacy (type=3) login mode\n"
-            "                (may not be supported by server)",
             "  -d            show debug output",
             "  -h            display this message and exit"]
     print >> stream, "\n".join(msglist)
@@ -792,7 +743,7 @@ def isvalidport(txt):
 
 
 def main():
-    optspec = "hc:dIe"
+    optspec = "hc:dI"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     # Get options and arguments, emit help message on bad options.
     try:
@@ -826,9 +777,6 @@ def main():
     # Interactive password overrides all other forms of password input.
     if "-I" in opdict and the_opr != "logout":
         CONFIG["password"] = getpass.getpass()
-    # Legacy mode login?
-    if "-e" in opdict and the_opr == "login":
-        CONFIG["islegacylogin"] = True
     # Validation of config and its values.
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"],
