@@ -503,7 +503,6 @@ def login(cfg):
     as possible.
 
     """
-
     fname = expanduser(cfg["uidfile"])
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
     try:
@@ -538,52 +537,52 @@ def login(cfg):
             # Then try decoding as password_error@timestamp format
             try:
                 offset = _get_offset_from_msg(ourtime, msg)
-            except ValueError:  # Not in password_error@timestamp
+            except ValueError:  # Not in password_error@timestamp format
                 break
             # XXX hard-coded
             time.sleep(1)
             n_attempt += 1
             continue    # not needed -- for clarity only
-        else:   # Success with getting the uid
-            # Write uid to file
-            try:
-                write_uid(num_info[0], fname)
-            except IOError as io_e:
-                # This should not be an error, but a warning.  Log-in succeeds
-                # anyway, you just can't store the uid.
-                boiler = "Warning: login:"
-                print >> sys.stderr, \
-                        "%s can't write UID file (%s)" % (boiler, io_e)
-                print >> sys.stderr, \
-                        "%s the uid is: %s" % (boiler, num_info[0])
-            controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-            try:    # check for anyting left over
-                controlsock.bind("/tmp/pysrun.sock")
-            except socket.error as so_e:
-                if so_e.errno == errno.EADDRINUSE:
-                    # reclaim leftover process
-                    try:
-                        controlsock.sendto("DIE", "/tmp/pysrun.sock")
-                    except socket.error:
-                        pass
-                else:
-                    raise so_e
-            finally:
-                controlsock.close()
-                # reclaim leftover address
+        # Success with getting the uid
+        # Write uid to file
+        try:
+            write_uid(num_info[0], fname)
+        except IOError as io_e:
+            # This should not be an error, but a warning.  Log-in succeeds
+            # anyway, you just can't store the uid.
+            boiler = "Warning: login:"
+            print >> sys.stderr, \
+                    "%s can't write UID file (%s)" % (boiler, io_e)
+            print >> sys.stderr, \
+                    "%s the uid is: %s" % (boiler, num_info[0])
+        controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        try:    # check for anyting left over
+            controlsock.bind("/tmp/pysrun.sock")
+        except socket.error as so_e:
+            if so_e.errno == errno.EADDRINUSE:
+                # reclaim leftover process
                 try:
-                    os.unlink("/tmp/pysrun.sock")
-                except OSError:
+                    controlsock.sendto("DIE", "/tmp/pysrun.sock")
+                except socket.error:
                     pass
-            # Forking into background a heartbeat keeper.
+            else:
+                raise so_e
+        finally:
+            controlsock.close()
+            # reclaim leftover address
             try:
-                pid = os.fork()
-            except OSError as os_e:
-                error("login", os_e, server=False, exitp=True, exitcode=4)
-            if pid:  # parent
-                return None
-            else:  # child
-                daemon(cfg, num_info)
+                os.unlink("/tmp/pysrun.sock")
+            except OSError:
+                pass
+        # Forking into background a heartbeat keeper.
+        try:
+            pid = os.fork()
+        except OSError as os_e:
+            error("login", os_e, server=False, exitp=True, exitcode=4)
+        if pid:  # parent
+            return None
+        else:  # child
+            daemon(cfg, num_info)
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
