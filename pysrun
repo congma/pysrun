@@ -444,9 +444,9 @@ def daemon(cfg, num_info):
         while True:
             #pylint: disable=W0612
             rs, ws, xs = select.select([psock, controlsock], [], [])
-            if psock in rs and psock.recv(1024) == "DEAD":  # peer exit
+            if psock in rs and psock.recv(128) == "DEAD":  # peer exit
                 break
-            if controlsock in rs and controlsock.recv(1024) == "DIE":
+            if controlsock in rs and controlsock.recv(128) == "DIE":
                 break
         sys.exit(0)
     else:  # child
@@ -460,7 +460,7 @@ def daemon(cfg, num_info):
         uidmsg = struct.pack("<q", num_info[0])
         while True:
             try:
-                data = csock.recv(1024)
+                data = csock.recv(128)
             except socket.timeout as so_t:
                 msg = do_heartbeat(srvaddr, uidmsg)
                 if msg == -2:
@@ -480,7 +480,7 @@ def do_heartbeat(srvaddr, message):
     # for communication and short enough for performance.
     sock.settimeout(0.5)
     try:
-        retmsg = sock.recvfrom(32)
+        retmsg = sock.recvfrom(128)
     except socket.timeout:
         pass    # Ignore it? Don't know what should be done...
     if retmsg[1] == srvaddr:    # received message is from server
