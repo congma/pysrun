@@ -23,6 +23,7 @@ import struct
 import atexit
 import signal
 import select
+import resource
 # pylint: disable=W0401
 # pylint: disable=W0614
 from ctypes import *
@@ -250,6 +251,61 @@ def get_hwaddress(ifname):
     return addr
 
 
+def become_daemon(stdin=None, stdout=None, stderr=None):
+    """Become a daemon process before doing daemonic things.
+
+    If leaving any standard stream to None, os.devnull will be used.
+
+    Please don't open unnecessary file descriptors before calling this.
+    They won't be kept.
+
+    This function clears the umask and returns the old umask.
+
+    """
+    # Ref1: Unix Programming FAQ, section 1.7,
+    # "How do I get my program to act like a daemon?"
+    # http://www.faqs.org/faqs/unix-faq/programmer/faq/
+    # Ref2: W. Richard Stevens: Advanced Programming in the Unix Environment,
+    # section 13.3
+    # Ref3: Alex Martelli et al., eds., Python Cookbook
+    # section 9.13 http://onlamp.com/python/pythoncook2/solution.csp?day=1
+    # Ref4: http://code.activestate.com/recipes/278731-creating-a-daemon-the-python-way/
+    # Make sure we are not process group leader and not possessing controlling
+    # terminal
+    try:
+        pid = os.fork()
+    except OSError as os_e:
+        error("login (fork 1)", os_e, server=False, exitp=True, exitcode=4)
+    if pid:  # parent
+        os._exit(0)
+    # Detaching from parent environment
+    oldmask = os.umask(0)     # Clear inherited umask
+    os.chdir("/")   # Prevent fs unmountability
+    os.setsid()     # Run in new session
+    # Become a non-leader
+    try:
+        pid = os.fork()
+    except OSError as os_e:
+        error("login (fork 2)", os_e, server=False, exitp=True, exitcode=1)
+    if pid:
+        os._exit(0)
+    # Redirect standard streams
+    maxnofile = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+    if maxnofile == resource.RLIM_INFINITY:
+        maxnofile = 1024
+    os.closerange(0, maxnofile)
+    pi, po, pe = (os.devnull if x is None else x \
+            for x in (stdin, stdout, stderr))
+    si = open(pi, "r")
+    so = open(po, "a+")
+    se = open(pe, "a+", 0)
+    # Close the inherited standard streams
+    map(lambda x, y: os.dup2(x.fileno(), y.fileno()),
+            [si, so, se],
+            [sys.stdin, sys.stdout, sys.stderr])
+    return oldmask
+
+
 def read_config_file(path, warn=False):
     """Read the key-value pair configuration options from file located at path.
 
@@ -426,9 +482,10 @@ def unbind_control_sock():
         pass
 
 
-def daemon(cfg, num_info):
+def daemon(cfg, num_info, umask):
     """Daemon process."""
 
+    os.umask(umask)
     psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
     siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
     pid = os.fork()
@@ -563,14 +620,8 @@ def login(cfg):
             except OSError:
                 pass
         # Forking into background a heartbeat keeper.
-        try:
-            pid = os.fork()
-        except OSError as os_e:
-            error("login", os_e, server=False, exitp=True, exitcode=4)
-        if pid:  # parent
-            return None
-        else:  # child
-            daemon(cfg, num_info)
+        oldmask = become_daemon()
+        daemon(cfg, num_info, oldmask)
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
