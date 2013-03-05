@@ -588,7 +588,7 @@ def login(cfg):
             # XXX hard-coded
             time.sleep(1)
             n_attempt += 1
-            continue    # not needed -- for clarity only
+            continue
         # Success with getting the uid
         # Write uid to file
         try:
@@ -623,6 +623,8 @@ def login(cfg):
         # Forking into background a heartbeat keeper.
         oldmask = become_daemon()
         daemon(cfg, num_info, oldmask)
+        # The control flow should be handed to daemon() in another
+        # process so there's no need of leaving the while loop.
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
