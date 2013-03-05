@@ -254,10 +254,12 @@ def get_hwaddress(ifname):
 def become_daemon(stdin=None, stdout=None, stderr=None):
     """Become a daemon process before doing daemonic things.
 
-    If leaving any standard stream to None, os.devnull will be used.
+    Paths can be specified so that the standard streams will be
+    directed to them, facilitating logging, among others.
+    If leaving any path to None, os.devnull will be used.
 
-    Please don't open unnecessary file descriptors before calling this.
-    They won't be kept.
+    All file descriptors up to the known limit will be closed, and
+    the standard streams re-opened upon return.
 
     This function clears the umask and returns the old umask.
 
@@ -289,20 +291,19 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
         error("login (fork 2)", os_e, server=False, exitp=True, exitcode=1)
     if pid:
         os._exit(0)
-    # Redirect standard streams
+    # Close all inherited file descriptors.  Note that not even the standard
+    # input/output/errors are kept, because we've no idea where they're
+    # redirected.
     maxnofile = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
     if maxnofile == resource.RLIM_INFINITY:
         maxnofile = 1024
     os.closerange(0, maxnofile)
     pi, po, pe = (os.devnull if x is None else x \
             for x in (stdin, stdout, stderr))
-    si = open(pi, "r")
-    so = open(po, "a+")
-    se = open(pe, "a+", 0)
-    # Close the inherited standard streams
-    map(lambda x, y: os.dup2(x.fileno(), y.fileno()),
-            [si, so, se],
-            [sys.stdin, sys.stdout, sys.stderr])
+    # Reopen standard streams.  Should guarantee stdin is 0, stdout 1, etc.
+    sys.stdin = open(pi, "r")
+    sys.stdout = open(po, "a+")
+    sys.stderr = open(pe, "a+", 0)
     return oldmask
 
 
