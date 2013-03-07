@@ -541,10 +541,12 @@ def do_heartbeat(srvaddr, message):
         retmsg = sock.recvfrom(128)
     except socket.timeout:
         pass    # Ignore it? Don't know what should be done...
-    if retmsg[1] == srvaddr:    # received message is from server
-        # Don't ask about the endianness...
-        retnum = struct.unpack("<q", retmsg[0][:8])[0]
-    sock.close()
+    else:
+        if retmsg[1] == srvaddr:    # received message is from server
+            # Don't ask about the endianness...
+            retnum = struct.unpack("<q", retmsg[0][:8])[0]
+    finally:
+        sock.close()
     return retnum
 
 
