@@ -24,6 +24,7 @@ import atexit
 import signal
 import select
 import resource
+import stat
 from ctypes import (CDLL, pointer, Structure, Union,
         c_void_p, c_char_p,
         c_uint8, c_uint16,
@@ -256,6 +257,7 @@ def get_hwaddress(ifname):
 
 def become_daemon(stdin=None, stdout=None, stderr=None):
     """Become a daemon process before doing daemonic things.
+    Return None.
 
     Paths can be specified so that the standard streams will be
     directed to them, facilitating logging, among others.
@@ -264,7 +266,7 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     All file descriptors up to the known limit will be closed, and
     the standard streams re-opened upon return.
 
-    This function clears the umask and returns the old umask.
+    This function clears the umask.
 
     """
     # Ref1: Unix Programming FAQ, section 1.7,
@@ -284,7 +286,6 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     if pid:  # parent
         os._exit(os.EX_OK)  # pylint: disable=W0212
     # Detaching from parent environment
-    oldmask = os.umask(0)     # Clear inherited umask
     os.chdir("/")   # Prevent fs unmountability
     os.setsid()     # Run in new session
     # Become a non-leader
@@ -307,7 +308,6 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     sys.stdin = open(path_i, "r")
     sys.stdout = open(path_o, "a+")
     sys.stderr = open(path_e, "a+", 0)
-    return oldmask
 
 
 def read_config_file(path, warn=False):
@@ -509,15 +509,16 @@ def unbind_control_sock():
         pass
 
 
-def daemon(cfg, num_info, umask):
+def daemon(cfg, num_info):
     """Daemon process."""
-    os.umask(umask)
     psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
     siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
     pid = os.fork()
     if pid:  # parent
         csock.close()
         controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        os.fchmod(controlsock.fileno(),
+                stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
         controlsock.bind("/tmp/pysrun.sock")
         atexit.register(_announce_peer_exit, psock)
         atexit.register(unbind_control_sock)
@@ -648,8 +649,8 @@ def login(cfg):
         write_uid(num_info[0], expanduser(cfg["uidfile"]))
         cleanup_daemon_leftover()
         # Forking into background a heartbeat keeper.
-        oldmask = become_daemon()
-        daemon(cfg, num_info, oldmask)
+        become_daemon()
+        daemon(cfg, num_info)
         # The control flow should be handed to daemon() in another
         # process so there's no need of leaving the while loop.
     # If the program ever reaches here, we have a server-generated error.
