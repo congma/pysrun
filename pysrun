@@ -24,9 +24,10 @@ import atexit
 import signal
 import select
 import resource
-# pylint: disable=W0401
-# pylint: disable=W0614
-from ctypes import *
+from ctypes import (CDLL, pointer, Structure, Union,
+        c_void_p, c_char_p,
+        c_uint8, c_uint16,
+        c_ushort, c_short, c_uint, c_int)
 from ctypes.util import find_library
 
 
@@ -69,7 +70,7 @@ PLATFORM = os.uname()[0].lower()
 # Linux: the broadcast and destination address pointers form a union (since
 # the peer cannot be dst and brd at the same time).  On BSD the struct ifaddrs
 # has two members for broadcast and destination separately.
-class _linux_ifa_ifu_u(Union):
+class _linux_ifa_ifu_u(Union):  # pylint: disable=C0103,C0111
     _fields_ = [
             ("ifu_broadaddr", c_void_p),
             ("ifu_dstaddr", c_void_p)]
@@ -77,14 +78,14 @@ class _linux_ifa_ifu_u(Union):
 
 # sockaddr-related structures
 # For generic/unknown address family
-class _bsd_sockaddr(Structure):
+class _bsd_sockaddr(Structure):  # pylint: disable=C0103,C0111
     _fields_ = [
             ("sa_len", c_uint8),
             ("sa_family", c_uint8),
             ("sa_data", (c_uint8 * 14))]
 
 
-class _linux_sockaddr(Structure):
+class _linux_sockaddr(Structure):  # pylint: disable=C0103,C0111
     _fields_ = [
             ("sa_family", c_uint16),
             ("sa_data", (c_uint8 * 14))]
@@ -92,7 +93,7 @@ class _linux_sockaddr(Structure):
 
 # AF_PACKET / Linux
 # Linux header: linux/if_packet.h, struct sockaddr_ll
-class _linux_sockaddr_ll(Structure):
+class _linux_sockaddr_ll(Structure):  # pylint: disable=C0103,C0111
     _fields_ = [
             ("sll_family", c_ushort),
             ("sll_protocol", c_uint16),
@@ -110,8 +111,10 @@ class _linux_sockaddr_ll(Structure):
 # AF_LINK -- BSD family, struct sockaddr_dl
 # BSD: net/if_dl.h
 # Pretty-printer mixin for both long- and short-data variants.
-class _bsd_sockaddr_dl_formatter_mixin(object):
-    """Mixin class that added pretty-printing function to
+class _BSDMacFormatterMixin(object):
+    """
+
+    Mixin class that added pretty-printing function to
     the Python classes that interface the various BSD sockaddr_dl
     structures.
 
@@ -124,7 +127,7 @@ class _bsd_sockaddr_dl_formatter_mixin(object):
 
 # The "short data" is used by NetBSD / OpenBSD.  The difference is subtle,
 # as the 12-char data is defined as *minimum* requirement.
-class _bsd_short_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
+class _bsd_short_sockaddr_dl(Structure, _BSDMacFormatterMixin):
     _fields_ = [
             ("sdl_len", c_uint8),
             ("sdl_family", c_uint8),
@@ -137,7 +140,7 @@ class _bsd_short_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
 
 
 # The "long data" version is used by FreeBSD / DragonFlyBSD.
-class _bsd_long_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
+class _bsd_long_sockaddr_dl(Structure, _BSDMacFormatterMixin):
     _fields_ = [
             ("sdl_len", c_uint8),
             ("sdl_family", c_uint8),
@@ -152,7 +155,7 @@ class _bsd_long_sockaddr_dl(Structure, _bsd_sockaddr_dl_formatter_mixin):
 # struct ifaddrs, see getifaddrs(3) man page.
 # Linux: pointers to brd and dst form a union, takes one member in
 # struct ifaddrs.
-class _linux_ifaddrs(Structure):
+class _linux_ifaddrs(Structure):  # pylint: disable=C0103,C0111
     _fields_ = [
             ("ifa_next", c_void_p),
             ("ifa_name", c_char_p),
@@ -164,7 +167,7 @@ class _linux_ifaddrs(Structure):
 
 
 # BSD: pointers to brd and dst are two members.
-class _bsd_ifaddrs(Structure):
+class _bsd_ifaddrs(Structure):  # pylint: disable=C0103,C0111
     _fields_ = [
             ("ifa_next", c_void_p),
             ("ifa_name", c_char_p),
@@ -198,7 +201,7 @@ PLATFORM_LOOKUP = {"linux": (_linux_ifaddrs,
 
 
 def getmacaddrs():
-    """Returns a dictionary with each key being an interface name and
+    """Return a dictionary with each key being an interface name and
     the value being a list of corresponding MAC addresses (possibly empty), in
     textual representation.
 
@@ -222,10 +225,10 @@ def getmacaddrs():
         # ifa_addr at all and we can usually skip them because they're hardly
         # relevant for our usage case.
         if ifa.ifa_addr:
-            sa = sockaddr.from_address(ifa.ifa_addr)
-            if sa.sa_family == AF_LINK:
-                si = sockaddr_dl.from_address(ifa.ifa_addr)
-                addr = "%s" % si
+            saddr = sockaddr.from_address(ifa.ifa_addr)
+            if saddr.sa_family == AF_LINK:
+                sinterf = sockaddr_dl.from_address(ifa.ifa_addr)
+                addr = "%s" % sinterf
                 if addr:
                     result[name].append(addr)
         if ifa.ifa_next:
@@ -238,7 +241,7 @@ def getmacaddrs():
 
 
 def get_hwaddress(ifname):
-    """Returns a text representation of the HW address of an interface."""
+    """Return a text representation of the HW address of an interface."""
     # It might be possible that more than one link-layer address is associated
     # with the interface.  If this is the case, we simply return the first.
     # If there's no such interface or the interface has no MAC address,
@@ -279,7 +282,7 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     except OSError as os_e:
         error("login (fork 1)", os_e, server=False, exitp=True, exitcode=4)
     if pid:  # parent
-        os._exit(0)
+        os._exit(os.EX_OK)  # pylint: disable=W0212
     # Detaching from parent environment
     oldmask = os.umask(0)     # Clear inherited umask
     os.chdir("/")   # Prevent fs unmountability
@@ -290,7 +293,7 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     except OSError as os_e:
         error("login (fork 2)", os_e, server=False, exitp=True, exitcode=1)
     if pid:
-        os._exit(0)
+        os._exit(os.EX_OK)  # pylint: disable=W0212
     # Close all inherited file descriptors.  Note that not even the standard
     # input/output/errors are kept, because we've no idea where they're
     # redirected.
@@ -298,43 +301,44 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     if maxnofile == resource.RLIM_INFINITY:
         maxnofile = 1024
     os.closerange(0, maxnofile)
-    pi, po, pe = (os.devnull if x is None else x \
+    path_i, path_o, path_e = (os.devnull if x is None else x \
             for x in (stdin, stdout, stderr))
     # Reopen standard streams.  Should guarantee stdin is 0, stdout 1, etc.
-    sys.stdin = open(pi, "r")
-    sys.stdout = open(po, "a+")
-    sys.stderr = open(pe, "a+", 0)
+    sys.stdin = open(path_i, "r")
+    sys.stdout = open(path_o, "a+")
+    sys.stderr = open(path_e, "a+", 0)
     return oldmask
 
 
 def read_config_file(path, warn=False):
-    """Read the key-value pair configuration options from file located at path.
+    """Read the key-value pair configuration options from file located at path
+    and return a dictionary of config options.
 
     If warn is True, warn against all non-conforming lines in addition to
     ignoring them.  Default: False.
 
-    Returns a dictionary of config options.
-
     """
     lineno = 0
     result = {}
-    fh = open(path, "r")
-    for line in fh:
+    fhandle = open(path, "r")
+    for line in fhandle:
         lineno += 1
         try:
             record = pfilter(line)
-        except CfgLineIsGarbage as g:
-            if warn and not g.isblank:
+        except CfgLineIsGarbage as garb:
+            if warn and not garb.isblank:
                 print >> sys.stderr, ("Debug: %s: line %d: column %d: "
-                        "garbage in\n%s" % (path, lineno, g.col, g))
+                        "garbage in\n%s" % (path, lineno, garb.col, garb))
             continue
         result.update(record)
-    fh.close()
+    fhandle.close()
     return result
 
 
 class CfgLineIsGarbage(ValueError):
-    """Exception class notifying the caller that the line being filtered
+    """
+
+    Exception class notifying the caller that the line being filtered
     is a garbage line.
 
     """
@@ -350,7 +354,7 @@ class CfgLineIsGarbage(ValueError):
         return None
 
     def __str__(self):
-        """Returns a two-line representation of the culprit line.  The first
+        """Return a two-line representation of the culprit line.  The first
         output line is a copy of the line with trailing whitespace removed
         to save screen space.  The second line is used to show a cursor mark
         pointing to the first offending column.
@@ -361,6 +365,7 @@ class CfgLineIsGarbage(ValueError):
 
 def pfilter(line):
     """Filter input configuration file line for meaningful key-value pair.
+    Return a dictionary containing only such key-value pairs.
 
     See README for the format definition.
 
@@ -385,25 +390,28 @@ def read_uid(uid_path):
     """Search in the uid_path file for the uid used to end a session.  Stop and
     return on first match.
 
+    Return a string stripped of leading and trailing whitespaces.
+
     """
-    fh = open(uid_path, "r")
-    for line in fh:
+    fhandle = open(uid_path, "r")
+    for line in fhandle:
         bline = line.strip()
         if bline.isdigit():
-            fh.close()
+            fhandle.close()
             return bline
     raise ValueError("no UID found in UID file (%s)" % uid_path)
 
 
 def write_uid(uid, uid_path):
-    fh = open(uid_path, "w")
-    fh.write("%s\n" % uid)
-    fh.close()
+    fhandle = open(uid_path, "w")
+    fhandle.write("%s\n" % uid)
+    fhandle.close()
     return None
 
 
 def encode_txt(plaintxt, keytxt):
-    """Encode the password for sending using type=2 operation mode.
+    """Encode plaintxt for sending using type=2 operation mode using keytxt.
+    Return a string containing the encoded text.
 
     Ref: http://blog.sskaje.me/2009/04/srun3000.html
 
@@ -418,7 +426,7 @@ def encode_txt(plaintxt, keytxt):
     ordder = lambda s: [ord(c) for c in s]
     plain_asc = ordder(plaintxt)
     key_asc = ordder(padded_key)
-    tmp = map(lambda x, y: x ^ y, plain_asc, key_asc)
+    tmp = map(lambda x, y: x ^ y, plain_asc, key_asc)  # pylint: disable=W0141
     res = []
     for i in xrange(len(tmp)):
         lowpar = chr((tmp[i] & 0x0f) + 0x36)
@@ -432,8 +440,10 @@ def encode_txt(plaintxt, keytxt):
 
 
 def makekey(unixtime, offset=0):
-    """Returns the key based on the UNIX time and the given offset."""
+    """Return the key text string based on the UNIX time and the given
+    offset in seconds.
 
+    """
     kstr = "%d" % ((unixtime + offset) / 60)
     return kstr[::-1]
 
@@ -442,24 +452,25 @@ def communicate_to_server(url, postdata, prefix):
     """Communicate to the authentication/app gateway server by HTTP messages,
     with data sent using the POST method.
 
-    Returns the document returned from server, unchanged.  It is up to the
+    Return the document received from server, unchanged.  It is up to the
     caller to decide what to do with the document.
 
     """
     try:
-        f = urllib2.urlopen(url, postdata)
+        docf = urllib2.urlopen(url, postdata)
     except urllib2.URLError as url_e:
         error(prefix, "can't communicate to server (%s)" % url_e.reason,
                 exitcode=4)
-    msg = f.read()
-    f.close()
+    msg = docf.read()
+    docf.close()
     return msg
 
 
 def _announce_peer_exit(sock):
     """To be registered as atexit hook.  Announce peer exit event
-    via the UDS sock."""
+    via the UDS sock.
 
+    """
     try:
         sock.send("DEAD")
     except socket.error:
@@ -467,16 +478,20 @@ def _announce_peer_exit(sock):
 
 
 def handlerfactory(sock):
-    """Create signal handler that sends exit announcement to sock."""
+    """Create signal handler that sends exit announcement to sock.
+    Return the manufactured function.
 
-    def sh(signum, frame):
+    """
+    def handler(signum, frame):  # pylint: disable=W0613,C0111
         _announce_peer_exit(sock)
-    return sh
+    return handler
 
 
 def unbind_control_sock():
-    """Clean up control socket on exit."""
+    """Clean up control socket on exit.  To be registered as atexit
+    callback.
 
+    """
     try:
         os.unlink("/tmp/pysrun.sock")
     except OSError:
@@ -485,7 +500,6 @@ def unbind_control_sock():
 
 def daemon(cfg, num_info, umask):
     """Daemon process."""
-
     os.umask(umask)
     psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
     siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
@@ -500,11 +514,10 @@ def daemon(cfg, num_info, umask):
         for sig in siglist:
             signal.signal(sig, shandler)
         while True:
-            #pylint: disable=W0612
-            rs, ws, xs = select.select([psock, controlsock], [], [])
-            if psock in rs and psock.recv(128) == "DEAD":  # peer exit
+            rlist, wlist, xlist = select.select([psock, controlsock], [], [])
+            if psock in rlist and psock.recv(128) == "DEAD":  # peer exit
                 break
-            if controlsock in rs and controlsock.recv(128) == "DIE":
+            if controlsock in rlist and controlsock.recv(128) == "DIE":
                 break
         sys.exit(0)
     else:  # child
@@ -519,7 +532,7 @@ def daemon(cfg, num_info, umask):
         while True:
             try:
                 data = csock.recv(128)
-            except socket.timeout as so_t:
+            except socket.timeout:
                 msg = do_heartbeat(srvaddr, uidmsg)
                 if msg == -2:
                     sys.exit(0)
@@ -529,8 +542,12 @@ def daemon(cfg, num_info, umask):
 
 
 def do_heartbeat(srvaddr, message):
-    """Once-per-minute UDP heartbeat."""
+    """Once-per-minute UDP heartbeat.
+    Return the "signed long long" data received from server on succcess.
+    If the server times out in 0.5 seconds, or sends what we perceive as
+    garbage, or we fail to receive from the server at all, return None.
 
+    """
     retnum = None
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.sendto(message, srvaddr)
@@ -552,7 +569,7 @@ def do_heartbeat(srvaddr, message):
 
 def login(cfg):
     """The login sequence.  Kill any known background daemon as late
-    as possible.
+    as possible.  On successful login, create and hand over to the daemon.
 
     """
     fname = expanduser(cfg["uidfile"])
@@ -635,7 +652,7 @@ def login(cfg):
 
 def _get_info_from_msg(text):
     """Get the information from a well-formed message returned for
-    successful login.
+    successful login.  Return a list of 5 numbers.
 
     Tentative format is
     uid, IP address padded with 8 bytes of status string, bytes left,
@@ -650,8 +667,10 @@ def _get_info_from_msg(text):
 
 
 def _get_offset_from_msg(unixtime, text, prefix="password_error@"):
-    """Parse the text, retrieve the timestamp, and calculate the offset."""
+    """Parse the text, retrieve the timestamp, and calculate the offset.
+    Return the numerical offset as a float.
 
+    """
     if not text.startswith(prefix):
         raise ValueError
     theirtime = int(text[len(prefix):])
@@ -674,7 +693,6 @@ def _ask_daemon_to_die():
 
 def logout(cfg):
     """The logout sequence."""
-
     fname = expanduser(cfg["uidfile"])
     try:
         uid = read_uid(fname)
@@ -688,9 +706,9 @@ def logout(cfg):
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
     msg = communicate_to_server(url, logout_postdata, "logout")
-    s = msg.strip()
-    if s != "logout_ok":    # NOTE: Magic constant used.
-        error("logout", s, server=True)
+    stext = msg.strip()
+    if stext != "logout_ok":    # NOTE: Magic constant used.
+        error("logout", stext, server=True)
     else:   # Log-out success
         _ask_daemon_to_die()
     return None
@@ -698,15 +716,14 @@ def logout(cfg):
 
 def kick(cfg):
     """Kick all users using the account."""
-
     url = "http://%s:%s/cgi-bin/force_logout" % (cfg["address"], cfg["port"])
     kick_data = {"username": cfg["username"],
             "password": cfg["password"]}
     kick_postdata = urlencode(kick_data)
     msg = communicate_to_server(url, kick_postdata, "kick")
-    s = msg.strip()
-    if s != "logout_ok":    # NOTE: Magic constant used.
-        error("kick", s, server=True)
+    stext = msg.strip()
+    if stext != "logout_ok":    # NOTE: Magic constant used.
+        error("kick", stext, server=True)
     else:   # Kick success
         _ask_daemon_to_die()
     return None
@@ -748,7 +765,7 @@ def error(prefix, txt, server=False, exitp=True, exitcode=2):
 
 def have(keylist, dic):
     """Check whether all keys in keylist are present in dic and all keys
-    has values evaluating to True.
+    has values evaluating to True.  Return a boolean.
 
     """
     return all(key in dic and dic[key] for key in keylist)
@@ -783,8 +800,9 @@ def transform_to_config(inputdic):
     """Translate the keys in inputdic to the corresponding config
     dictionary key name.
 
-    Returns the transformed dictionary object useful for updating the config
+    Return the transformed dictionary object useful for updating the config
     dictionary.
+
     """
     result = {}
     for key, value in inputdic.iteritems():
