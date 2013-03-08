@@ -403,9 +403,20 @@ def read_uid(uid_path):
 
 
 def write_uid(uid, uid_path):
-    fhandle = open(uid_path, "w")
-    fhandle.write("%s\n" % uid)
-    fhandle.close()
+    """Write the UID uid to file at uid_path.  Catch file I/O failure
+    and emit warning.  Return None.
+
+    """
+    try:
+        fhandle = open(uid_path, "w")
+        fhandle.write("%s\n" % uid)
+        fhandle.close()
+    except IOError as io_e:
+        # This should not be an error, but a warning.  Log-in succeeds
+        # anyway, you just can't store the uid.
+        boiler = "Warning: login:"
+        print >> sys.stderr, "%s can't write UID file (%s)" % (boiler, io_e)
+        print >> sys.stderr, "%s the uid is: %s" % (boiler, uid)
     return None
 
 
@@ -514,7 +525,7 @@ def daemon(cfg, num_info, umask):
         for sig in siglist:
             signal.signal(sig, shandler)
         while True:
-            rlist, wlist, xlist = select.select([psock, controlsock], [], [])
+            rlist = select.select([psock, controlsock], [], [])[0]
             if psock in rlist and psock.recv(128) == "DEAD":  # peer exit
                 break
             if controlsock in rlist and controlsock.recv(128) == "DIE":
@@ -567,12 +578,37 @@ def do_heartbeat(srvaddr, message):
     return retnum
 
 
+def cleanup_daemon_leftover():
+    """Clean up leftover daemon processes and named socket file, if
+    any.
+
+    """
+    controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        controlsock.bind("/tmp/pysrun.sock")
+    except socket.error as so_e:
+        if so_e.errno == errno.EADDRINUSE:
+            # reclaim leftover process
+            try:
+                controlsock.sendto("DIE", "/tmp/pysrun.sock")
+            except socket.error:
+                pass
+        else:
+            raise so_e
+    finally:
+        controlsock.close()
+        # reclaim leftover address
+        try:
+            os.unlink("/tmp/pysrun.sock")
+        except OSError:
+            pass
+
+
 def login(cfg):
     """The login sequence.  Kill any known background daemon as late
     as possible.  On successful login, create and hand over to the daemon.
 
     """
-    fname = expanduser(cfg["uidfile"])
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
     try:
         mac = get_hwaddress(cfg["interface"])
@@ -609,36 +645,8 @@ def login(cfg):
             n_attempt += 1
             continue
         # Success with getting the uid
-        # Write uid to file
-        try:
-            write_uid(num_info[0], fname)
-        except IOError as io_e:
-            # This should not be an error, but a warning.  Log-in succeeds
-            # anyway, you just can't store the uid.
-            boiler = "Warning: login:"
-            print >> sys.stderr, \
-                    "%s can't write UID file (%s)" % (boiler, io_e)
-            print >> sys.stderr, \
-                    "%s the uid is: %s" % (boiler, num_info[0])
-        controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        try:    # check for anyting left over
-            controlsock.bind("/tmp/pysrun.sock")
-        except socket.error as so_e:
-            if so_e.errno == errno.EADDRINUSE:
-                # reclaim leftover process
-                try:
-                    controlsock.sendto("DIE", "/tmp/pysrun.sock")
-                except socket.error:
-                    pass
-            else:
-                raise so_e
-        finally:
-            controlsock.close()
-            # reclaim leftover address
-            try:
-                os.unlink("/tmp/pysrun.sock")
-            except OSError:
-                pass
+        write_uid(num_info[0], expanduser(cfg["uidfile"]))
+        cleanup_daemon_leftover()
         # Forking into background a heartbeat keeper.
         oldmask = become_daemon()
         daemon(cfg, num_info, oldmask)
@@ -693,9 +701,8 @@ def _ask_daemon_to_die():
 
 def logout(cfg):
     """The logout sequence."""
-    fname = expanduser(cfg["uidfile"])
     try:
-        uid = read_uid(fname)
+        uid = read_uid(expanduser(cfg["uidfile"]))
     except IOError as io_e:
         error("logout", "can't read from UID file (%s)" % io_e,
                 exitcode=4)
