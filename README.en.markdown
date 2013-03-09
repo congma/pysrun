@@ -74,15 +74,23 @@ All the options have equivalent command-line counterparts.  Therefore the
 program can be used in the absence of a valid configuration file.  The
 following options are recognized:
 
-* `-u USERNAME`: Specifies the username.  Equivalent to the `username` option.
-* `-p PASSWORD`: Specifies the password.  Equivalent to the `password` option.
+* `-u USERNAME`: Specifies the username.  Equivalent to the `username` option
+in the config file.
+* `-p PASSWORD`: Specifies the password.  Equivalent to the `password` option
+in the config file
 * `-a ADDRESS`: The host name or IP address of the server.  Equivalent to
-the `address` option.
-* `-P PORT`: Service port number.  Equivalent to the `port` option.
+the `address` option in the config file.
+* `-P PORT`: Service port number.  Equivalent to the `port` option in the
+config file.
 * `-i INTERFACE`: Network interface userd for MAC address retrieval.
-Equivalent to the `interface` option.
+Equivalent to the `interface` option in the config file.
 * `-s FILE`: Path to the "uid" storage file.  Equivalent to the `uidfile`
-option.
+option in the config file.
+* `-l FILE`: Path to the log file.  If the file doesn't exist, attempt to
+create it.  If this option is not provided, no logs are kept.  If `-d` 
+(debugging, see below) option is enabled, debugging information will be logged,
+otherwise only certain exceptions are recorded.  Equivalent to the `logpath`
+option in the config file.
 
 *NOTE:*  The above command-line options, when specified, overrides the
 equivalent configuration file options.
@@ -95,7 +103,8 @@ alternative path other than the default (`~/.pysrun.cfg`) is used.  Tip: use
 * `-I`: Turns on interactive password prompt.  The password you typed is not
 echoed back.  This is useful if you don't want to store the password.  If
 present, only the interactively typed password is used.
-* `-d`: Turns on debugging output.
+* `-d`: Turns on debugging output.  If logging (see above) is enabled, debug
+information will be logged.
 * `-h`: Display usage help and exit.
 
 
