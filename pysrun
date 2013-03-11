@@ -500,7 +500,7 @@ def _logexit(identity):
     logging.debug("%s exiting", identity)
 
 
-def handlerfactory(identity, sock):
+def handlerfactory(identity):
     """Create signal handler that sends exit announcement to sock, using
     the string identity to identify the process in logging.
     Return the manufactured function.
@@ -548,7 +548,7 @@ def daemon(cfg, num_info):
         atexit.register(_logexit, identity)
         atexit.register(_announce_peer_exit, identity, psock)
         atexit.register(unbind_control_sock)
-        shandler = handlerfactory(identity, psock)
+        shandler = handlerfactory(identity)
         for sig in siglist:
             signal.signal(sig, shandler)
         while True:
@@ -566,7 +566,7 @@ def daemon(cfg, num_info):
         psock.close()
         atexit.register(_logexit, identity)
         atexit.register(_announce_peer_exit, identity, csock)
-        shandler = handlerfactory(identity, csock)
+        shandler = handlerfactory(identity)
         for sig in siglist:
             signal.signal(sig, shandler)
         csock.settimeout(60)
