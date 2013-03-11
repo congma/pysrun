@@ -235,7 +235,7 @@ The programs is available under a BSD license.  See the packaged file COPYRIGHT.
 
 ## VERSION INFORMATION
 
-2013-03-09 version 1.0.5.
+2013-03-11 version 1.0.6.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
