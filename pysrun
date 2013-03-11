@@ -482,24 +482,36 @@ def communicate_to_server(url, postdata, prefix):
     return msg
 
 
-def _announce_peer_exit(sock):
+def _announce_peer_exit(identity, sock):
     """To be registered as atexit hook.  Announce peer exit event
-    via the UDS sock.
+    via the UDS sock.  Ignore socket exceptions.  Use string identity
+    to format log message.
 
     """
+    logging.debug("%s sending exit announcement to peer", identity)
     try:
         sock.send("DEAD")
     except socket.error:
         pass
 
 
-def handlerfactory(sock):
-    """Create signal handler that sends exit announcement to sock.
+def _logexit(identity):
+    """To be registered as atexit hook.  Log exiting event."""
+    logging.debug("%s exiting", identity)
+
+
+def handlerfactory(identity, sock):
+    """Create signal handler that sends exit announcement to sock, using
+    the string identity to identify the process in logging.
     Return the manufactured function.
 
     """
     def handler(signum, frame):  # pylint: disable=W0613,C0111
-        _announce_peer_exit(sock)
+        if signum == signal.SIGTERM:
+            logging.debug("%s received signal %s", identity, signum)
+            sys.exit(0)
+        else:
+            logging.debug("%s received signal %s, ignoring", identity, signum)
     return handler
 
 
@@ -524,33 +536,37 @@ def daemon(cfg, num_info):
             stream=sys.stderr)
     pid = os.fork()
     if pid:  # parent
-        logging.debug("local command listener started")
+        identity = "command listener"
+        logging.debug("%s started", identity)
         csock.close()
         controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         os.fchmod(controlsock.fileno(),
                 stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
         controlsock.bind("/tmp/pysrun.sock")
-        logging.debug("bound to socket address /tmp/pysrun.sock")
-        atexit.register(_announce_peer_exit, psock)
+        logging.debug("%s bound to socket address /tmp/pysrun.sock",
+                identity)
+        atexit.register(_logexit, identity)
+        atexit.register(_announce_peer_exit, identity, psock)
         atexit.register(unbind_control_sock)
-        shandler = handlerfactory(psock)
+        shandler = handlerfactory(identity, psock)
         for sig in siglist:
             signal.signal(sig, shandler)
         while True:
             rlist = select.select([psock, controlsock], [], [])[0]
             if psock in rlist and psock.recv(128) == "DEAD":  # peer exit
-                logging.info("listener received heartbeater exit announcement")
+                logging.debug("%s received peer exit announcement", identity)
                 break
             if controlsock in rlist and controlsock.recv(128) == "DIE":
-                logging.info("listener received local exit command")
+                logging.debug("%s received local exit command", identity)
                 break
-        logging.debug("listener exiting")
         sys.exit(0)
     else:  # child
-        logging.debug("hearbeater started")
+        logging.debug("hearbeater started (uid %s)", num_info[0])
+        identity = "heartbeater"
         psock.close()
-        atexit.register(_announce_peer_exit, csock)
-        shandler = handlerfactory(psock)
+        atexit.register(_logexit, identity)
+        atexit.register(_announce_peer_exit, identity, csock)
+        shandler = handlerfactory(identity, csock)
         for sig in siglist:
             signal.signal(sig, shandler)
         csock.settimeout(60)
@@ -563,14 +579,13 @@ def daemon(cfg, num_info):
                 msg = do_heartbeat(srvaddr, uidmsg)
                 if msg == -2:
                     logging.info("heartbeater received death ping from server")
-                    logging.debug("heartbeater exiting")
-                    sys.exit(0)
+                    break
             else:
                 if data == "DEAD":  # peer exit
-                    logging.info("heartbeater received listener exit " \
+                    logging.debug("heartbeater received listener exit " \
                             "announcement")
-                    logging.debug("heartbeater exiting")
-                    sys.exit(0)
+                    break
+        sys.exit(0)
 
 
 def do_heartbeat(srvaddr, message):
@@ -583,7 +598,8 @@ def do_heartbeat(srvaddr, message):
     retnum = None
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.sendto(message, srvaddr)
-    logging.info("message sent to server (%r, %s:%s)" , message, *srvaddr)
+    logging.debug("heartbeat message sent to server (%r, %s:%s)",
+            message, *srvaddr)
     # 0.5 seconds of recv timeout should be long enough
     # for communication and short enough for performance.
     sock.settimeout(0.5)
@@ -596,7 +612,7 @@ def do_heartbeat(srvaddr, message):
         if retmsg[1] == srvaddr:    # received message is from server
             # Don't ask about the endianness...
             retnum = struct.unpack("<q", retmsg[0][:8])[0]
-            logging.info("received server hearbeat (%s)", retnum)
+            logging.debug("received server hearbeat (%s)", retnum)
         else:
             logging.warning("response not from server (%r, %s:%s)",
                     retmsg[0], *retmsg[1])
