@@ -501,8 +501,10 @@ def _logexit(identity):
 
 
 def handlerfactory(identity):
-    """Create signal handler that sends exit announcement to sock, using
-    the string identity to identify the process in logging.
+    """Create signal handler that sends exit announcement, using
+    the string identity to identify the process in logging.  The announcement
+    is sent using the already registered atexit functions.
+
     Return the manufactured function.
 
     """
