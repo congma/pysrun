@@ -532,7 +532,7 @@ def daemon(cfg, num_info):
     siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
     logging.basicConfig(format="[%(asctime)s] %(process)d:" \
             "%(levelname)s:%(message)s",
-            level=(logging.DEBUG if "debug" in cfg else logging.WARNING),
+            level=(logging.DEBUG if "debug" in cfg else logging.INFO),
             stream=sys.stderr)
     pid = os.fork()
     if pid:  # parent
