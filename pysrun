@@ -536,39 +536,49 @@ def daemon(cfg, num_info):
     if pid:  # parent
         logging.debug("command listener started")
         csock.close()
-        pfd = psock.fileno()
-        ctrlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        ctrlfd = ctrlsock.fileno()
-        os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
-        ctrlsock.bind("/tmp/pysrun.sock")
-        logging.debug("bound to socket address /tmp/pysrun.sock")
-        poller.register(pfd, select.POLLIN)
-        poller.register(ctrlfd, select.POLLIN)
-        statdict = dict(poller.poll())
-        if pfd in statdict and (statdict[pfd] & select.POLLHUP):
-            # peer exit
-            logging.debug("received peer exit event")
-        if ctrlfd in statdict and ctrlsock.recv(128) == "DIE":
-            logging.debug("received local exit command")
-        sys.exit(0)
+        daemon_cmdlistener(psock, poller)
     else:  # child
         logging.debug("hearbeater started (uid %s)", num_info[0])
         psock.close()
-        cfd = csock.fileno()
-        poller.register(cfd, select.POLLIN)
-        srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
-        uidmsg = struct.pack("<q", num_info[0])
-        while True:
-            statlist = poller.poll(60000)  # 1 min in milliseconds
-            if not statlist:    # timeout
-                msg = do_heartbeat(srvaddr, uidmsg)
-                if msg == -2:
-                    logging.info("received death ping from server")
-                    break
-            elif statlist[0][1] & select.POLLHUP:   # peer exit
-                logging.debug("received peer exit event")
+        daemon_heartbeater(csock, poller, cfg, num_info)
+
+
+def daemon_cmdlistener(peersock, poller):
+    """Daemon subprocess: command listener (parent)."""
+    pfd = peersock.fileno()
+    ctrlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    ctrlfd = ctrlsock.fileno()
+    os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
+    ctrlsock.bind("/tmp/pysrun.sock")
+    logging.debug("bound to socket address /tmp/pysrun.sock")
+    poller.register(pfd, select.POLLIN)
+    poller.register(ctrlfd, select.POLLIN)
+    statdict = dict(poller.poll())
+    if pfd in statdict and (statdict[pfd] & select.POLLHUP):
+        # peer exit
+        logging.debug("received peer exit event")
+    if ctrlfd in statdict and ctrlsock.recv(128) == "DIE":
+        logging.debug("received local exit command")
+    sys.exit(0)
+
+
+def daemon_heartbeater(peersock, poller, cfg, num_info):
+    """Daemon subprocess: heartbeater (parent)."""
+    pfd = peersock.fileno()
+    poller.register(pfd, select.POLLIN)
+    srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
+    uidmsg = struct.pack("<q", num_info[0])
+    while True:
+        statlist = poller.poll(60000)  # 1 min in milliseconds
+        if not statlist:    # timeout
+            msg = do_heartbeat(srvaddr, uidmsg)
+            if msg == -2:
+                logging.info("received death ping from server")
                 break
-        sys.exit(0)
+        elif statlist[0][1] & select.POLLHUP:   # peer exit
+            logging.debug("received peer exit event")
+            break
+    sys.exit(0)
 
 
 def do_heartbeat(srvaddr, message):
