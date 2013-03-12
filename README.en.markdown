@@ -207,7 +207,7 @@ for now.
 
 It does not depend on whether the system is 32- or 64-bit.
 
-Python version 2.7 is recommended.
+Python version 2.7 is required for the newest version.
 
 
 ## BACKGROUND INFORMATION
