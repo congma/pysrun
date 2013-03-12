@@ -72,7 +72,7 @@ LIBC = CDLL(LIBC_NAME)
 PLATFORM = os.uname()[0].lower()
 
 
-# Implementation of getifaddrs()-based MAC functions.
+# Implementation of getifaddrs()-based low-level function.
 # Ref1: http://kbyanc.blogspot.com/2010/11/python-enumerating-ip-addresses-on.html
 # Ref2: http://carnivore.it/2010/07/22/python_-_getifaddrs
 # Reference for type definitions:
