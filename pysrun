@@ -639,12 +639,15 @@ def daemon_cmdlistener(peersock, poller):
     logging.debug("bound to socket address /tmp/pysrun.sock")
     poller.register(pfd, select.POLLIN)
     poller.register(ctrlfd, select.POLLIN)
-    statdict = dict(poller.poll())
-    if pfd in statdict and (statdict[pfd] & select.POLLHUP):
-        # peer exit
-        logging.debug("received peer exit event")
-    if ctrlfd in statdict and ctrlsock.recv(128) == "DIE":
-        logging.debug("received local exit command")
+    while True:
+        statdict = dict(poller.poll())
+        if pfd in statdict and (statdict[pfd] & select.POLLHUP):
+            # peer exit
+            logging.debug("received peer exit event")
+            break
+        if ctrlfd in statdict and ctrlsock.recv(128) == "DIE":
+            logging.debug("received local exit command")
+            break
     sys.exit(0)
 
 
