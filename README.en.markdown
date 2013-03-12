@@ -113,9 +113,9 @@ information will be logged.
 ### Log-in, log-out and kicking operations.
 
 1. Log-in: use the command `pysrun login`.  Program exits silently on
-successful log-in.  The username and password are required.
-2. Log-out: use `pysrun logout`.  The "uid" is required, therefore `uidfile`
-must be known to the program.
+successful log-in.  The username, password and interface are required.
+2. Log-out: use `pysrun logout`.  The interface and "uid" is required,
+therefore `uidfile` must be known to the program.
 3. Forced log-out, or kicking: use `pysrun kick` to force out all users of
 this account.  The username and password are required.
 
