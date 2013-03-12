@@ -12,8 +12,10 @@ COPYRIGHT.
 import sys
 import getopt
 import getpass
+import httplib
 from urllib import urlencode
 import urllib2
+import functools
 import os
 from os.path import expanduser, abspath
 import socket
@@ -28,8 +30,10 @@ import stat
 import logging
 from ctypes import (CDLL, pointer, Structure, Union,
         c_void_p, c_char_p,
+        c_uint32,
         c_uint8, c_uint16,
-        c_ushort, c_short, c_uint, c_int)
+        c_ushort, c_short, c_uint, c_int,
+        c_char, c_ubyte)
 from ctypes.util import find_library
 
 
@@ -71,7 +75,10 @@ PLATFORM = os.uname()[0].lower()
 # Implementation of getifaddrs()-based MAC functions.
 # Ref1: http://kbyanc.blogspot.com/2010/11/python-enumerating-ip-addresses-on.html
 # Ref2: http://carnivore.it/2010/07/22/python_-_getifaddrs
-
+# Reference for type definitions:
+# BSD: Robert Watson's FXR: http://fxr.watson.org/
+# Linux: Free Electrons: http://lxr.free-electrons.com/
+#
 # Linux: the broadcast and destination address pointers form a union (since
 # the peer cannot be dst and brd at the same time).  On BSD the struct ifaddrs
 # has two members for broadcast and destination separately.
@@ -157,6 +164,44 @@ class _bsd_long_sockaddr_dl(Structure, _BSDMacFormatterMixin):
             ("sdl_data", (c_uint8 * 46))]
 
 
+# struct in_addr: essentially common to Linux and BSD
+class _in_addr(Structure):  # pylint: disable=C0103,C0111
+    _fields_ = [
+            ("s_addr", c_uint32)]
+
+    def __str__(self):
+        return socket.inet_ntoa(struct.pack("@I", self.s_addr))
+
+
+class _INETFormatterMixin(object):
+    """
+
+    Mix-in class for formatting AF_INET socket address structures.
+
+    """
+    def __str__(self):
+        return str(self.sin_addr)
+
+
+# BSD AF_INET (IPv4): netinet/in.h
+class _bsd_sockaddr_in(Structure, _INETFormatterMixin):
+    _fields_ = [
+            ("sin_len", c_uint8),
+            ("sin_family", c_uint8),
+            ("sin_port", c_uint16),
+            ("sin_addr", _in_addr),
+            ("sin_zero", (c_char * 8))]
+
+
+# Linux AF_INET: linux/in.h
+class _linux_sockaddr_in(Structure, _INETFormatterMixin):
+    _fields_ = [
+            ("sin_family", c_ushort),
+            ("sin_port", c_uint16),
+            ("sin_addr", _in_addr),
+            ("sin_zero", (c_ubyte * 8))]
+
+
 # struct ifaddrs, see getifaddrs(3) man page.
 # Linux: pointers to brd and dst form a union, takes one member in
 # struct ifaddrs.
@@ -192,29 +237,47 @@ else:
     # Currently, this is true for all BSDs we consider.
     # http://www.freebsd.org/doc/en/books/developers-handbook/sockets-essential-functions.html
     AF_LINK = 18
-# The values of the lookup table are tuples organized in the following manner:
-# Index 0: The equivalent of struct ifaddrs, see ifaddrs.h, getifaddrs(3).
-# Index 1: The equivalent of struct sockaddr_ll (Linux, see netpacket/packet.h)
-#          or sockaddr_dl (BSD, see net/if_dl.h).
-# Index 2: The equivalent of struct sockaddr, see sys/socket.h.
-PLATFORM_LOOKUP = {"linux": (_linux_ifaddrs,
-    _linux_sockaddr_ll, _linux_sockaddr),
-    "freebsd": (_bsd_ifaddrs, _bsd_long_sockaddr_dl, _bsd_sockaddr),
-    "dragonfly": (_bsd_ifaddrs, _bsd_long_sockaddr_dl, _bsd_sockaddr),
-    "netbsd": (_bsd_ifaddrs, _bsd_short_sockaddr_dl, _bsd_sockaddr),
-    "openbsd": (_bsd_ifaddrs, _bsd_short_sockaddr_dl, _bsd_sockaddr)}
+# The values of the lookup table are tuples organized by index:
+# 0: The equivalent of struct ifaddrs, see ifaddrs.h, getifaddrs(3).
+# 1: A dictionary with address families as keys and corresponding
+#    sockaddr_xx structures as values.
+# 2: The equivalent of struct sockaddr, see sys/socket.h.
+PLATFORM_LOOKUP = {
+    "linux": (_linux_ifaddrs,
+        {AF_LINK: _linux_sockaddr_ll,
+        socket.AF_INET: _linux_sockaddr_in},
+        _linux_sockaddr),
+    "freebsd": (_bsd_ifaddrs,
+        {AF_LINK: _bsd_long_sockaddr_dl,
+        socket.AF_INET: _bsd_sockaddr_in},
+        _bsd_sockaddr),
+    "dragonfly": (_bsd_ifaddrs,
+        {AF_LINK: _bsd_long_sockaddr_dl,
+        socket.AF_INET: _bsd_sockaddr_in},
+        _bsd_sockaddr),
+    "netbsd": (_bsd_ifaddrs,
+        {AF_LINK: _bsd_short_sockaddr_dl,
+        socket.AF_INET: _bsd_sockaddr_in},
+        _bsd_sockaddr),
+    "openbsd": (_bsd_ifaddrs,
+        {AF_LINK: _bsd_short_sockaddr_dl,
+        socket.AF_INET: _bsd_sockaddr_in},
+        _bsd_sockaddr)}
 
 
-def getmacaddrs():
+def getaddrs():
     """Return a dictionary with each key being an interface name and
-    the value being a list of corresponding MAC addresses (possibly empty), in
-    textual representation.
+    the value being another dictionary.  The value dictionary has
+    address families as keys, and a (possibly empty) list of addresses
+    within that family as each key's value.  Currently the supported families
+    are IPv4 (AF_INET) and Ethernet MAC address (AF_PACKET on Linux,
+    AF_LINK on BSD).
 
     This function calls the platform's getifaddrs() implementation.
 
     """
     # Unpack just for the sake of being meaningful.
-    ifaddrs, sockaddr_dl, sockaddr = PLATFORM_LOOKUP[PLATFORM]
+    ifaddrs, familydict, sockaddr = PLATFORM_LOOKUP[PLATFORM]
     ptr = c_void_p(None)
     result = LIBC.getifaddrs(pointer(ptr))
     if result != 0:
@@ -223,19 +286,23 @@ def getmacaddrs():
     result = {}
 
     while True:
-        name = ifa.ifa_name
-        if name not in result:
-            result[name] = []
+        name = ifa.ifa_name  # name of network interface
+        if name not in result:  # this interface not yet encountered
+            # Initialize container directory for this interface.
+            result[name] = {}
+            for family in familydict:
+                result[name][family] = []
         # Some interface (such as a TUN virtual network) doesn't give us
         # ifa_addr at all and we can usually skip them because they're hardly
         # relevant for our usage case.
         if ifa.ifa_addr:
             saddr = sockaddr.from_address(ifa.ifa_addr)
-            if saddr.sa_family == AF_LINK:
-                sinterf = sockaddr_dl.from_address(ifa.ifa_addr)
-                addr = "%s" % sinterf
-                if addr:
-                    result[name].append(addr)
+            for family, sockaddr_xx in familydict.iteritems():
+                if saddr.sa_family == family:
+                    sinterf = sockaddr_xx.from_address(ifa.ifa_addr)
+                    addr = "%s" % sinterf
+                    if addr:
+                        result[name][family].append(addr)
         if ifa.ifa_next:
             ifa = ifaddrs.from_address(ifa.ifa_next)
         else:
@@ -245,15 +312,14 @@ def getmacaddrs():
     return result
 
 
-def get_hwaddress(ifname):
-    """Return a text representation of the HW address of an interface."""
-    # It might be possible that more than one link-layer address is associated
+def get_address(ifname, family, ifaddrdict):
+    """Return a text representation of the address on an interface."""
+    # It might be possible that more than one address is associated
     # with the interface.  If this is the case, we simply return the first.
-    # If there's no such interface or the interface has no MAC address,
-    # we notify caller via ValueError.
-    macdict = getmacaddrs()
+    # If there's no such interface or the interface has no such kind of
+    # address, we notify caller via ValueError.
     try:
-        addr = macdict[ifname][0]
+        addr = ifaddrdict[ifname][family][0]
     except (IndexError, KeyError):
         raise ValueError("%s" % ifname)
     return addr
@@ -464,16 +530,36 @@ def makekey(unixtime, offset=0):
     return kstr[::-1]
 
 
-def communicate_to_server(url, postdata, prefix):
+class BoundHTTPHandler(urllib2.HTTPHandler):
+    """HTTP Handler that can bind to local IP address."""
+    # Ref: http://stackoverflow.com/a/14669175/418374
+
+    def __init__(self, source_address=None, debuglevel=0):
+        # urllib2.HTTPHandler is an old-style class so no super() call.
+        urllib2.HTTPHandler.__init__(self, debuglevel)
+        self.http_class = functools.partial(httplib.HTTPConnection,
+                source_address=source_address)
+
+    def http_open(self, req):
+        return self.do_open(self.http_class, req)
+
+
+def communicate_to_server(url, postdata, prefix, local_ip=""):
     """Communicate to the authentication/app gateway server by HTTP messages,
     with data sent using the POST method.
+
+    If local_ip is specified, will bind to that address with port 0 (arbitrary
+    non-privileged port).
 
     Return the document received from server, unchanged.  It is up to the
     caller to decide what to do with the document.
 
     """
+    # Ref: http://stackoverflow.com/a/14669175/418374
+    handler = BoundHTTPHandler(source_address=(local_ip, 0))
+    opener = urllib2.build_opener(handler)
     try:
-        docf = urllib2.urlopen(url, postdata)
+        docf = opener.open(url, postdata)
     except urllib2.URLError as url_e:
         error(prefix, "can't communicate to server (%s)" % url_e.reason,
                 exitcode=4)
@@ -571,7 +657,7 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
     while True:
         statlist = poller.poll(60000)  # 1 min in milliseconds
         if not statlist:    # timeout
-            msg = do_heartbeat(srvaddr, uidmsg)
+            msg = do_heartbeat(srvaddr, uidmsg, cfg["ipinuse"])
             if msg == -2:
                 logging.info("received death ping from server")
                 break
@@ -581,7 +667,7 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
     sys.exit(0)
 
 
-def do_heartbeat(srvaddr, message):
+def do_heartbeat(srvaddr, message, local_ip=""):
     """Once-per-minute UDP heartbeat.
     Return the "signed long long" data received from server on succcess.
     If the server times out in 0.5 seconds, or sends what we perceive as
@@ -590,6 +676,7 @@ def do_heartbeat(srvaddr, message):
     """
     retnum = None
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((local_ip, 0))
     sock.sendto(message, srvaddr)
     logging.debug("heartbeat message sent to server (%r, %s:%s)",
             message, *srvaddr)
@@ -647,10 +734,16 @@ def login(cfg):
     """
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
     try:
-        mac = get_hwaddress(cfg["interface"])
+        mac = get_address(cfg["interface"], AF_LINK, cfg["ifaddrs"])
     except ValueError as val_e:
         error("login", "no MAC address information for interface (%s)" % val_e,
                 exitcode=4)
+    try:
+        localip = get_address(cfg["interface"], socket.AF_INET, cfg["ifaddrs"])
+    except ValueError as val_e:
+        error("login", "no IPv4 address information for interface (%s)" \
+                % val_e, exitcode=4)
+    cfg["ipinuse"] = localip
     login_data = {"username": cfg["username"],
         "drop": "0",
         "type": "2",
@@ -666,7 +759,7 @@ def login(cfg):
         login_postdata = urlencode(login_data)
         # Send data and receive response.
         # Expect either uid or server exception message.
-        msg = communicate_to_server(url, login_postdata, "login")
+        msg = communicate_to_server(url, login_postdata, "login", localip)
         # Analyse return message.
         try:    # Try as message of success
             num_info = _get_info_from_msg(msg)
@@ -745,10 +838,15 @@ def logout(cfg):
     except ValueError as val_e:  # read_uid() reads non-uid
         error("logout", "%s" % val_e,
                 exitcode=2)
+    try:
+        localip = get_address(cfg["interface"], socket.AF_INET, cfg["ifaddrs"])
+    except ValueError as val_e:
+        error("login", "no IPv4 address information for interface (%s)" \
+                % val_e, exitcode=4)
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
-    msg = communicate_to_server(url, logout_postdata, "logout")
+    msg = communicate_to_server(url, logout_postdata, "logout", localip)
     stext = msg.strip()
     if stext != "logout_ok":    # NOTE: Magic constant used.
         error("logout", stext, server=True)
@@ -860,6 +958,21 @@ def isvalidport(txt):
     return txt.isdigit() and int(txt) <= 65535 and int(txt) >= 0
 
 
+def human_enum(strlist):
+    """Return a human-readable textual enumeration of the strings in the list
+
+    strlist."""
+    cleantxtlist = []
+    for item in strlist:
+        word = str(item).strip()
+        if word:
+            cleantxtlist.append(word)
+    head = cleantxtlist[:-1]
+    tail = cleantxtlist[-1:]
+    hstr = ", ".join(head)
+    return " and ".join([hstr] + tail if hstr else tail)
+
+
 def main():
     optspec = "hc:dI"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
@@ -899,16 +1012,19 @@ def main():
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"],
                 exitcode=2)
-    required_keys = {"login": ["username", "password"],
-            "logout": ["uidfile"],
+    # Kicking can use whatever connection available, but log-in/-out
+    # requires address matching (XXX: not tested yet)
+    required_keys = {"login": ["username", "password", "interface"],
+            "logout": ["uidfile", "interface"],
             "kick": ["username", "password"]}
-    if have(required_keys[the_opr], CONFIG):
-        operation_table[the_opr](CONFIG)
-    else:
+    if not have(required_keys[the_opr], CONFIG):
         error("config", "operation \"%s\" requires the option%s %s" %
                 (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
-                    " and ".join(required_keys[the_opr])),
+                    human_enum(required_keys[the_opr])),
                 exitcode=2)
+    # All operations needs to know the current network status
+    CONFIG["ifaddrs"] = getaddrs()
+    operation_table[the_opr](CONFIG)
 
 
 if __name__ == "__main__":
