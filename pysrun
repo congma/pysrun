@@ -517,11 +517,6 @@ def unbind_control_sock():
 
 def daemon(cfg, num_info):
     """Daemon process."""
-    # The rationale of using stream socket is to get a peer HUP event on
-    # peer exit.  This can be used to monitor peer death even if it's uncleanly
-    # killed.  Stream UDS is essentially full-duplex pipe, see W. Richard
-    # Stevens' book, section 17.3.
-    psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
     logging.basicConfig(format="[%(asctime)s] %(process)d:" \
             "%(levelname)s:%(message)s",
@@ -529,6 +524,13 @@ def daemon(cfg, num_info):
             stream=sys.stderr)
     atexit.register(_logexit)
     atexit.register(unbind_control_sock)
+    for sig in siglist:
+        signal.signal(sig, shandler)
+    # The rationale of using stream socket is to get a peer HUP event on
+    # peer exit.  This can be used to monitor peer death even if it's uncleanly
+    # killed.  Stream UDS is essentially full-duplex pipe, see W. Richard
+    # Stevens' book, section 17.3.
+    psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     poller = select.poll()
     pid = os.fork()
     if pid:  # parent
@@ -540,8 +542,6 @@ def daemon(cfg, num_info):
         os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
         ctrlsock.bind("/tmp/pysrun.sock")
         logging.debug("bound to socket address /tmp/pysrun.sock")
-        for sig in siglist:
-            signal.signal(sig, shandler)
         poller.register(pfd, select.POLLIN)
         poller.register(ctrlfd, select.POLLIN)
         statdict = dict(poller.poll())
@@ -555,8 +555,6 @@ def daemon(cfg, num_info):
         logging.debug("hearbeater started (uid %s)", num_info[0])
         psock.close()
         cfd = csock.fileno()
-        for sig in siglist:
-            signal.signal(sig, shandler)
         poller.register(cfd, select.POLLIN)
         srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
         uidmsg = struct.pack("<q", num_info[0])
