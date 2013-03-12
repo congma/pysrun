@@ -973,7 +973,7 @@ def human_enum(strlist):
     return " and ".join([hstr] + tail if hstr else tail)
 
 
-def main():  #pylint: disable=C0111
+def main():  # pylint: disable=C0111
     optspec = "hc:dI"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
     # Get options and arguments, emit help message on bad options.
