@@ -32,7 +32,9 @@ pysrun 是用Python编写的北师大上网认证网关客户端.
 2. `[Client]`
 用于配置客户端所运行需要的主机信息.
  * `interface`: 在哪个网络界面上认证. 此界面的MAC地址将成为认证信息的一部分.
- 默认值: eth0 (小窍门: 请查看 `ifconfig` 之类命令的输出决定界面的名称).
+ 对于登入和登出操作, 如果此界面可用, 则用于同认证服务器的通信的本地套接字都将
+ `bind()` 到该界面的 IP 地址. 默认值: eth0
+ (小窍门: 请查看 `ifconfig` 之类命令的输出决定界面的名称).
 3. `[Account]`
 填写用户帐号信息.
  * `username`: 帐号 (通常为学工号), 无默认值.
@@ -194,7 +196,7 @@ BSD 许可证, 见文件 COPYRIGHT.
 
 ## 版本信息
 
-2013-03-12 version 1.0.7.
+2013-03-12 version 1.0.8.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"

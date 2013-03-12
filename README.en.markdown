@@ -37,8 +37,10 @@ don't need to alter this unless you know what you are doing.
  * `port`: Port number of the service.  Default: 3333.
 2. `[Client]`: Client-side information needed by the service.
  * `interface`: Network interface for which the MAC address will be collected
- as part of the required authenticating information.  Default: eth0.  Tip: use
- a command like `ifconfig` to get the name of the interface.
+ as part of the required authenticating information.  For login and logout
+ operations, if the interface is usable, will `bind()` to that interface's IP
+ address when communicating with the server.  Default: eth0.
+ Tip: use a command like `ifconfig` to get the name of the interface.
 3. `[Account]`: User account information.
  * `username`: Account number as given by your campus ID.  No default value.
  * `password`: Your password.  No default value.
@@ -235,7 +237,7 @@ The programs is available under a BSD license.  See the packaged file COPYRIGHT.
 
 ## VERSION INFORMATION
 
-2013-03-12 version 1.0.7.
+2013-03-12 version 1.0.8.
 
 
 [d0733d2e]: https://github.com/torvalds/linux/commit/d0733d2e29b652b2e7b1438ececa732e4eed98eb "Linux commit d0733d2e29b652b2e7b1438ececa732e4eed98eb"
