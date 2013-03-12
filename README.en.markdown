@@ -6,6 +6,23 @@ written in Python.
 
 ## USAGE
 
+### Quick introduction
+
+1. Download the files and open the file `pysrun.cfg.default` with your favorate
+text editor.
+2. Fill in the information of the network interface's name (check
+the output of `ifconfig`), your username and password.  Save the modified file
+to the path under your home directory `~/.pysrun.cfg`.
+3. Start the program by the command `./pysrun login`.  Now you can start
+using BNU's campus network.
+
+After this, you may want to put the executable `pysrun` under a directory
+specified by the `PATH` environment variable (may require certain privileges).
+If necessary, you can `chmod` on the newly created configuration file
+`~/.pysrun.cfg` to restrict its read access rights, protecting your
+credentials.  For advanced instructions, please read the following manual.
+
+
 ### Installation
 
 The script is self-contained and no other packages are necessary, as long as
@@ -213,15 +230,27 @@ fails to work at all.
 see [Linux commit 29c486df][29c486df].  This happens to be what the official
 client does, so it happens to work again.  Admittedly this renders our last
 argument moot.
+* Its operation mode is frequently disabled by BNU on the server side.
 
-Meanwhile, BNU has provided no support for BSD systems.  Even if many BSD
-flavors now provide a compatibility layer for Linux binaries, one may expect
-problems when executing the inherently sloppy official client.  A native
-solution is still preferred.
+BNU provides another, GTK-based GUI client in 32- and 64-bit flavors.  It
+has most of the same weakness, and cannot be automated, either.
+
+A number of bugs have been identified in the original CLI and GUI client
+programs.  These bugs are listed at our GitHub Wiki page
+(https://github.com/congma/pysrun/wiki/BugsInOriginalClients).
+
+Meanwhile, BNU has provided no support for BSD systems.  Even if a few BSD
+flavors now provide a compatibility or emulation layer for Linux binaries,
+one may expect problems when executing the inherently sloppy "official" client.
+A native solution is still preferred.
 
 Therefore, what we need is a new client free of those defects.  My new
 client offers native support on Linux and BSD systems, is agnostic of the
-"64-bittedness" of the OS, has open code and is not a sloppy work.  As a
+"64-bittedness" of the OS, has open code and is not a sloppy work.  Most
+importantly, it closely follows standard programming practices under Unix-like
+OS, and provides a fully functional command-line and configuration file
+interface.  It has a set of well-defined return vaues, making it ideal for
+straightforward automation (e.g. implementing SysV init scripts).  As a
 result it is recommended you replace the "official" one by this new client.
 
 
