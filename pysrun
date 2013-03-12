@@ -482,39 +482,23 @@ def communicate_to_server(url, postdata, prefix):
     return msg
 
 
-def _announce_peer_exit(identity, sock):
-    """To be registered as atexit hook.  Announce peer exit event
-    via the UDS sock.  Ignore socket exceptions.  Use string identity
-    to format log message.
-
-    """
-    logging.debug("%s sending exit announcement to peer", identity)
-    try:
-        sock.send("DEAD")
-    except socket.error:
-        pass
-
-
-def _logexit(identity):
+def _logexit():
     """To be registered as atexit hook.  Log exiting event."""
-    logging.debug("%s exiting", identity)
+    logging.debug("exiting")
 
 
-def handlerfactory(identity):
-    """Create signal handler that sends exit announcement, using
-    the string identity to identify the process in logging.  The announcement
-    is sent using the already registered atexit functions.
-
-    Return the manufactured function.
+def shandler(signum, frame):  # pylint: disable=W0613,C0111
+    """signal handler that does clean shutdown on receiving SIGTERM
+    by calling sys.exit(), handing over to already registered atexit
+    handlers.  Other signals that normally causes termination are logged
+    and ignored.
 
     """
-    def handler(signum, frame):  # pylint: disable=W0613,C0111
-        if signum == signal.SIGTERM:
-            logging.debug("%s received signal %s", identity, signum)
-            sys.exit(0)
-        else:
-            logging.debug("%s received signal %s, ignoring", identity, signum)
-    return handler
+    if signum == signal.SIGTERM:
+        logging.debug("received signal %s", signum)
+        sys.exit(0)  # will call atexit handlers
+    else:
+        logging.debug("received signal %s, ignoring", signum)
 
 
 def unbind_control_sock():
@@ -522,71 +506,70 @@ def unbind_control_sock():
     callback.
 
     """
+    logging.debug("trying to reclaim named socket file")
     try:
         os.unlink("/tmp/pysrun.sock")
-    except OSError:
-        pass
+    except OSError as os_e:
+        logging.debug("can't reclaim named socket file (%s)", os_e)
+    else:
+        logging.debug("reclaimed named socket file")
 
 
 def daemon(cfg, num_info):
     """Daemon process."""
-    psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    # The rationale of using stream socket is to get a peer HUP event on
+    # peer exit.  This can be used to monitor peer death even if it's uncleanly
+    # killed.  Stream UDS is essentially full-duplex pipe, see W. Richard
+    # Stevens' book, section 17.3.
+    psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
     logging.basicConfig(format="[%(asctime)s] %(process)d:" \
             "%(levelname)s:%(message)s",
             level=(logging.DEBUG if "debug" in cfg else logging.INFO),
             stream=sys.stderr)
+    atexit.register(_logexit)
+    atexit.register(unbind_control_sock)
+    poller = select.poll()
     pid = os.fork()
     if pid:  # parent
-        identity = "command listener"
-        logging.debug("%s started", identity)
+        logging.debug("command listener started")
         csock.close()
-        controlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        os.fchmod(controlsock.fileno(),
-                stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
-        controlsock.bind("/tmp/pysrun.sock")
-        logging.debug("%s bound to socket address /tmp/pysrun.sock",
-                identity)
-        atexit.register(_logexit, identity)
-        atexit.register(_announce_peer_exit, identity, psock)
-        atexit.register(unbind_control_sock)
-        shandler = handlerfactory(identity)
+        pfd = psock.fileno()
+        ctrlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        ctrlfd = ctrlsock.fileno()
+        os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
+        ctrlsock.bind("/tmp/pysrun.sock")
+        logging.debug("bound to socket address /tmp/pysrun.sock")
         for sig in siglist:
             signal.signal(sig, shandler)
-        while True:
-            rlist = select.select([psock, controlsock], [], [])[0]
-            if psock in rlist and psock.recv(128) == "DEAD":  # peer exit
-                logging.debug("%s received peer exit announcement", identity)
-                break
-            if controlsock in rlist and controlsock.recv(128) == "DIE":
-                logging.debug("%s received local exit command", identity)
-                break
+        poller.register(pfd, select.POLLIN)
+        poller.register(ctrlfd, select.POLLIN)
+        statdict = dict(poller.poll())
+        if pfd in statdict and (statdict[pfd] & select.POLLHUP):
+            # peer exit
+            logging.debug("received peer exit event")
+        if ctrlfd in statdict and ctrlsock.recv(128) == "DIE":
+            logging.debug("received local exit command")
         sys.exit(0)
     else:  # child
         logging.debug("hearbeater started (uid %s)", num_info[0])
-        identity = "heartbeater"
         psock.close()
-        atexit.register(_logexit, identity)
-        atexit.register(_announce_peer_exit, identity, csock)
-        shandler = handlerfactory(identity)
+        cfd = csock.fileno()
         for sig in siglist:
             signal.signal(sig, shandler)
-        csock.settimeout(60)
+        poller.register(cfd, select.POLLIN)
         srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
         uidmsg = struct.pack("<q", num_info[0])
         while True:
-            try:
-                data = csock.recv(128)
-            except socket.timeout:
+            statlist = poller.poll(60000)  # 1 min in milliseconds
+            if not statlist:    # timeout
                 msg = do_heartbeat(srvaddr, uidmsg)
                 if msg == -2:
-                    logging.info("heartbeater received death ping from server")
+                    logging.info("received death ping from server")
                     break
-            else:
-                if data == "DEAD":  # peer exit
-                    logging.debug("heartbeater received listener exit " \
-                            "announcement")
-                    break
+            elif statlist[0][1] & select.POLLHUP:   # peer exit
+                logging.debug("received peer exit event")
+                break
         sys.exit(0)
 
 
