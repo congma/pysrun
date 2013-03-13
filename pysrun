@@ -568,50 +568,91 @@ def communicate_to_server(url, postdata, prefix, local_ip=""):
     return msg
 
 
-def _logexit():
-    """To be registered as atexit hook.  Log exiting event."""
-    logging.debug("exiting")
+def handler_factory(logger, terminate=False):
+    """Construct a signal handler using logger as logging facility.
+    The standard module logging cannot be used due to possible
+    race condition.  The boolean flag terminate is used to set whether
+    we should do clean terminate upon such signal.
 
-
-def shandler(signum, frame):  # pylint: disable=W0613,C0111
-    """signal handler that does clean shutdown on receiving SIGTERM
-    by calling sys.exit(), handing over to already registered atexit
-    handlers.  Other signals that normally causes termination are logged
-    and ignored.
+    Return signal handler function.
 
     """
-    if signum == signal.SIGTERM:
-        logging.debug("received signal %s", signum)
-        sys.exit(0)  # will call atexit handlers
-    else:
-        logging.debug("received signal %s, ignoring", signum)
+    def shandler(signum, frame):  # pylint: disable=W0613,C0111
+        """signal handler that does clean shutdown on receiving SIGTERM
+        by calling sys.exit(), handing over to already registered atexit
+        handlers.  Other signals that normally causes termination are logged
+        and ignored.
+
+        """
+        if terminate:
+            logger.debug("received signal %s", signum)
+            _unbind_control_sock(logger)
+            _logexit(logger)
+            os._exit(os.EX_OK)  # pylint: disable=W0212
+        else:
+            logger.debug("received signal %s, ignoring", signum)
+    return shandler
 
 
-def unbind_control_sock():
+def _logexit(logger):
+    """To be registered as atexit hook.  Log exiting event using logger
+    as logging instance"""
+    logger.debug("exiting")
+
+
+def _unbind_control_sock(logger):
     """Clean up control socket on exit.  To be registered as atexit
-    callback.
+    callback.  Log events using logger as logging instance.
 
     """
-    logging.debug("trying to reclaim named socket file")
+    logger.debug("trying to reclaim named socket file")
     try:
         os.unlink("/tmp/pysrun.sock")
     except OSError as os_e:
-        logging.debug("can't reclaim named socket file (%s)", os_e)
+        logger.debug("can't reclaim named socket file (%s)", os_e)
     else:
-        logging.debug("reclaimed named socket file")
+        logger.debug("reclaimed named socket file")
+
+
+class _SigHandlerSafeLogger(object):
+    """
+
+    Signal-handler-safe logging helper.  Emulate portion of the logging.xxxx()
+    API, but uses os.write() only.
+
+    """
+    def __init__(self, stream=sys.stderr):
+        self.logfd = stream.fileno()
+
+    def debug(self, message, *args):
+        our_message = (message % args) if args else message
+        text = "[%s] %s:SIGHANDLER:%s\n" % (time.strftime(r"%F %T"),
+                os.getpid(), our_message)
+        os.write(self.logfd, text)
 
 
 def daemon(cfg, num_info):
     """Daemon process."""
-    siglist = [signal.SIGHUP, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2]
+    # Signals that we should just ignore.
+    ignsigs = [signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2]
+    # Signals that we should handle by gracefully exit.
+    trmsigs = [signal.SIGTERM]
     logging.basicConfig(format="[%(asctime)s] %(process)d:" \
             "%(levelname)s:%(message)s",
             level=(logging.DEBUG if "debug" in cfg else logging.INFO),
             stream=sys.stderr)
-    atexit.register(_logexit)
-    atexit.register(unbind_control_sock)
-    for sig in siglist:
-        signal.signal(sig, shandler)
+    atexit.register(_logexit, logging)
+    atexit.register(_unbind_control_sock, logging)
+    # logger thus created when not in debug mode will automatically log
+    # to /dev/null.
+    logging_shsafe = _SigHandlerSafeLogger()
+    ign_handler = handler_factory(logging_shsafe, terminate=False)
+    trm_handler = handler_factory(logging_shsafe, terminate=True)
+    for sig in ignsigs:
+        signal.signal(sig, ign_handler)
+        signal.siginterrupt(sig, False)  # Restart interrupted system call
+    for sig in trmsigs:
+        signal.signal(sig, trm_handler)
     # The rationale of using stream socket is to get a peer HUP event on
     # peer exit.  This can be used to monitor peer death even if it's uncleanly
     # killed.  Stream UDS is essentially full-duplex pipe, see W. Richard
@@ -640,7 +681,14 @@ def daemon_cmdlistener(peersock, poller):
     poller.register(pfd, select.POLLIN)
     poller.register(ctrlfd, select.POLLIN)
     while True:
-        statdict = dict(poller.poll())
+        # Guard slow system call against EINTR
+        # see http://utcc.utoronto.ca/~cks/space/blog/python/SiginterruptGotcha
+        try:
+            statdict = dict(poller.poll())
+        except select.error as se_e:
+            if se_e.args[0] != errno.EINTR:
+                raise
+            continue
         if pfd in statdict and (statdict[pfd] & select.POLLHUP):
             # peer exit
             logging.debug("received peer exit event")
@@ -658,7 +706,12 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
     srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
     uidmsg = struct.pack("<q", num_info[0])
     while True:
-        statlist = poller.poll(60000)  # 1 min in milliseconds
+        try:
+            statlist = poller.poll(60000)  # 1 min in milliseconds
+        except select.error as se_e:
+            if se_e.args[0] != errno.EINTR:
+                raise
+            continue
         if not statlist:    # timeout
             msg = do_heartbeat(srvaddr, uidmsg, cfg["ipinuse"])
             if msg == -2:
