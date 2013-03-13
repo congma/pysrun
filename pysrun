@@ -20,6 +20,7 @@ import os
 from os.path import expanduser, abspath
 import socket
 import errno
+import datetime
 import time
 import struct
 import atexit
@@ -371,8 +372,8 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     if maxnofile == resource.RLIM_INFINITY:
         maxnofile = 1024
     os.closerange(0, maxnofile)
-    path_i, path_o, path_e = (os.devnull if x is None \
-            else abspath(expanduser(x)) for x in (stdin, stdout, stderr))
+    path_i, path_o, path_e = (os.devnull if x is None else \
+            abspath(expanduser(x)) for x in (stdin, stdout, stderr))
     # Reopen standard streams.  Should guarantee stdin is 0, stdout 1, etc.
     sys.stdin = open(path_i, "r")
     sys.stdout = open(path_o, "a+")
@@ -626,8 +627,10 @@ class _SigHandlerSafeLogger(object):
 
     def debug(self, message, *args):
         our_message = (message % args) if args else message
-        text = "[%s] %s:SIGHANDLER:%s\n" % (time.strftime(r"%F %T"),
-                os.getpid(), our_message)
+        now = datetime.datetime.now()
+        tstamp = now.strftime(r"%F %T") + \
+                ",%3.0f" % (now.microsecond / 1000.0)
+        text = "[%s] %s:SIGHANDLER:%s\n" % (tstamp, os.getpid(), our_message)
         os.write(self.logfd, text)
 
 
@@ -797,8 +800,8 @@ def login(cfg):
     try:
         localip = get_address(cfg["interface"], socket.AF_INET, cfg["ifaddrs"])
     except ValueError as val_e:
-        error("login", "no IPv4 address information for interface (%s)" \
-                % val_e, exitcode=4)
+        error("login", "no IPv4 address information for interface (%s)" % \
+                val_e, exitcode=4)
     cfg["ipinuse"] = localip
     login_data = {"username": cfg["username"],
         "drop": "0",
@@ -897,8 +900,8 @@ def logout(cfg):
     try:
         localip = get_address(cfg["interface"], socket.AF_INET, cfg["ifaddrs"])
     except ValueError as val_e:
-        error("login", "no IPv4 address information for interface (%s)" \
-                % val_e, exitcode=4)
+        error("login", "no IPv4 address information for interface (%s)" % \
+                val_e, exitcode=4)
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
