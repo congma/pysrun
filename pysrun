@@ -965,13 +965,8 @@ def human_enum(strlist):
     """Return a human-readable textual enumeration of the strings in the list
 
     strlist."""
-    cleantxtlist = []
-    for item in strlist:
-        word = str(item).strip()
-        if word:
-            cleantxtlist.append(word)
-    head = cleantxtlist[:-1]
-    tail = cleantxtlist[-1:]
+    head = strlist[:-1]
+    tail = strlist[-1:]
     hstr = ", ".join(head)
     return " and ".join([hstr] + tail if hstr else tail)
 
