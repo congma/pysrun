@@ -622,16 +622,21 @@ class _SigHandlerSafeLogger(object):
     API, but uses os.write() only.
 
     """
-    def __init__(self, stream=sys.stderr):
+    def __init__(self, stream=sys.stderr, isenabled=True):
         self.logfd = stream.fileno()
+        self.isenabled = isenabled
 
-    def debug(self, message, *args):
+    def _log(self, message, args):
         our_message = (message % args) if args else message
         now = datetime.datetime.now()
         tstamp = now.strftime(r"%F %T") + \
                 ",%3.0f" % (now.microsecond / 1000.0)
         text = "[%s] %s:SIGHANDLER:%s\n" % (tstamp, os.getpid(), our_message)
         os.write(self.logfd, text)
+
+    def debug(self, message, *args):
+        if self.isenabled:
+            self._log(message, args)
 
 
 def daemon(cfg, num_info):
@@ -646,9 +651,7 @@ def daemon(cfg, num_info):
             stream=sys.stderr)
     atexit.register(_logexit, logging)
     atexit.register(_unbind_control_sock, logging)
-    # logger thus created when not in debug mode will automatically log
-    # to /dev/null.
-    logging_shsafe = _SigHandlerSafeLogger()
+    logging_shsafe = _SigHandlerSafeLogger(isenabled=("debug" in cfg))
     ign_handler = handler_factory(logging_shsafe, terminate=False)
     trm_handler = handler_factory(logging_shsafe, terminate=True)
     for sig in ignsigs:
