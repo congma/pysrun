@@ -631,7 +631,7 @@ class _SigHandlerSafeLogger(object):
         our_message = (message % args) if args else message
         now = datetime.datetime.now()
         tstamp = now.strftime(r"%F %T") + \
-                ",%.3f" % (now.microsecond / 1000.0)
+                ",%03d" % (now.microsecond / 1000)
         text = "[%s] %s:SIGHANDLER:%s\n" % (tstamp, os.getpid(), our_message)
         os.write(self.logfd, text)
 
