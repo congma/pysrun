@@ -29,7 +29,6 @@ import select
 import resource
 import stat
 import logging
-import fcntl
 from ctypes import (CDLL, pointer, Structure, Union,
         c_void_p, c_char_p,
         c_uint32,
@@ -575,6 +574,7 @@ def handler_factory(logger, terminate=False):
     The standard module logging cannot be used due to possible
     race condition.  The boolean flag terminate is used to set whether
     we should do clean terminate upon such signal.
+
     Return signal handler function.
 
     """
@@ -639,97 +639,93 @@ class _SigHandlerSafeLogger(object):
             self._log(message, args)
 
 
-def daemon_shsetup(cfg):
-    """Setting daemon signal handlers.  Return self-pipe fd pair as
-    returned by os.pipe().
-
-    """
+def daemon(cfg, num_info):
+    """Daemon process."""
     # Signals that we should just ignore.
     ignsigs = [signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2]
     # Signals that we should handle by gracefully exit.
     trmsigs = [signal.SIGTERM]
-    pfds = os.pipe()    # DJB's self-pipe trick
-    for fd in pfds:
-        fcflags = fcntl.fcntl(fd, fcntl.F_GETFL, 0) | os.O_NONBLOCK
-        fcntl.fcntl(fd, fcntl.F_SETFL, fcflags)
-    logging_shsafe = _SigHandlerSafeLogger(isenabled=("debug" in cfg))
-    trm_handler = handler_factory(logging_shsafe, terminate=True)
-    ign_handler = handler_factory(logging_shsafe, terminate=False)
-    for sig in trmsigs:
-        signal.signal(sig, trm_handler)
-    for sig in ignsigs:
-        signal.signal(sig, ign_handler)
-        signal.siginterrupt(sig, False)  # Restart interrupted system call
-    signal.set_wakeup_fd(pfds[1])
-    return pfds
-
-
-def drain(fd):
-    """Read from fd until draining it.  Return bytes read."""
-    counter = 0
-    while True:
-        try:
-            buf = os.read(fd, 1024)
-        except OSError as os_e:
-            if os_e.errno == errno.EAGAIN:  # drained
-                break
-            else:
-                raise
-        counter += len(buf)
-    return counter
-
-
-def daemon(cfg, num_info):
-    """Daemon process."""
     logging.basicConfig(format="[%(asctime)s] %(process)d:" \
             "%(levelname)s:%(message)s",
             level=(logging.DEBUG if "debug" in cfg else logging.INFO),
             stream=sys.stderr)
-    logging.debug("daemon started")
-    rfd, wfd = daemon_shsetup(cfg)
-    logging.debug("daemon signal handlers set")
     atexit.register(_logexit, logging)
     atexit.register(_unbind_control_sock, logging)
-    logging.debug("daemon exit hooks set")
+    logging_shsafe = _SigHandlerSafeLogger(isenabled=("debug" in cfg))
+    ign_handler = handler_factory(logging_shsafe, terminate=False)
+    trm_handler = handler_factory(logging_shsafe, terminate=True)
+    for sig in ignsigs:
+        signal.signal(sig, ign_handler)
+        signal.siginterrupt(sig, False)  # Restart interrupted system call
+    for sig in trmsigs:
+        signal.signal(sig, trm_handler)
+    # The rationale of using stream socket is to get a peer HUP event on
+    # peer exit.  This can be used to monitor peer death even if it's uncleanly
+    # killed.  Stream UDS is essentially full-duplex pipe, see W. Richard
+    # Stevens' book, section 17.3.
+    psock, csock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    poller = select.poll()
+    pid = os.fork()
+    if pid:  # parent
+        logging.debug("command listener started")
+        csock.close()
+        daemon_cmdlistener(psock, poller)
+    else:  # child
+        logging.debug("hearbeater started (uid %s)", num_info[0])
+        psock.close()
+        daemon_heartbeater(csock, poller, cfg, num_info)
+
+
+def daemon_cmdlistener(peersock, poller):
+    """Daemon subprocess: command listener (parent)."""
+    pfd = peersock.fileno()
     ctrlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     ctrlfd = ctrlsock.fileno()
     os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
     ctrlsock.bind("/tmp/pysrun.sock")
     logging.debug("bound to socket address /tmp/pysrun.sock")
-    poller = select.poll()
-    poller.register(rfd, select.POLLIN)
+    poller.register(pfd, select.POLLIN)
     poller.register(ctrlfd, select.POLLIN)
-    srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
-    uidmsg = struct.pack("<q", num_info[0])
-    timeout = 60000
     while True:
-        then = time.time()
+        # Guard slow system call against EINTR
+        # see http://utcc.utoronto.ca/~cks/space/blog/python/SiginterruptGotcha
         try:
-            statdict = dict(poller.poll(timeout))
+            statdict = dict(poller.poll())
         except select.error as se_e:
             if se_e.args[0] != errno.EINTR:
                 raise
-            # Estimate the new timeout we need to put into poll() when we
-            # recover from EINTR
-            now = time.time()
-            # Someone may have slewed the clock.
-            timeout -= max(0, int(1000 * (now - then)))
-            logging.debug("adjusted next timeout %s", timeout)
             continue
+        if pfd in statdict and (statdict[pfd] & select.POLLHUP):
+            # peer exit
+            logging.debug("received peer exit event")
+            break
         if ctrlfd in statdict and ctrlsock.recv(128) == "DIE":
             logging.debug("received local exit command")
             break
-        if rfd in statdict:
-            logging.debug("last cycle interrupted by signal")
-            size = drain(rfd)
-            # XXX
-        if not statdict:    # Normal timeout, nothing happened.
+    sys.exit(0)
+
+
+def daemon_heartbeater(peersock, poller, cfg, num_info):
+    """Daemon subprocess: heartbeater (parent)."""
+    pfd = peersock.fileno()
+    poller.register(pfd, select.POLLIN)
+    srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
+    uidmsg = struct.pack("<q", num_info[0])
+    while True:
+        try:
+            statlist = poller.poll(60000)  # 1 min in milliseconds
+        except select.error as se_e:
+            if se_e.args[0] != errno.EINTR:
+                raise
+            continue
+        if not statlist:    # timeout
             msg = do_heartbeat(srvaddr, uidmsg, cfg["ipinuse"])
             if msg == -2:
                 logging.info("received death ping from server")
                 break
-            timeout = 60000  # Restore normal timeout
-            logging.debug("adjusted next timeout %s", timeout)
+        elif statlist[0][1] & select.POLLHUP:   # peer exit
+            logging.debug("received peer exit event")
+            break
     sys.exit(0)
 
 
