@@ -715,6 +715,7 @@ def daemon_cmdlistener(peersock, poller):
         except select.error as se_e:
             if se_e.args[0] != errno.EINTR:
                 raise
+            logging.debug("poll interrupted, trying to restart")
             continue
         if pfd in statdict and (statdict[pfd] & select.POLLHUP):
             # peer exit
