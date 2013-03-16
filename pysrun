@@ -681,7 +681,11 @@ def daemon_cmdlistener(peersock, poller):
     pfd = peersock.fileno()
     ctrlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     ctrlfd = ctrlsock.fileno()
-    os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
+    try:
+        os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
+    except OSError as os_e:
+        if os_e.errno != errno.EINVAL:  # BSD disallows fchmod on sockets.
+            raise
     ctrlsock.bind("/tmp/pysrun.sock")
     logging.debug("bound to socket address /tmp/pysrun.sock")
     poller.register(pfd, select.POLLIN)
@@ -787,14 +791,12 @@ def cleanup_daemon_leftover():
     try:
         controlsock.bind("/tmp/pysrun.sock")
     except socket.error as so_e:
-        if so_e.errno == errno.EADDRINUSE:
-            # reclaim leftover process
-            try:
-                controlsock.sendto("DIE", "/tmp/pysrun.sock")
-            except socket.error:
-                pass
-        else:
-            raise so_e
+        if so_e.errno != errno.EADDRINUSE:
+            raise
+        try:  # reclaim leftover process
+            controlsock.sendto("DIE", "/tmp/pysrun.sock")
+        except socket.error:
+            pass
     finally:
         controlsock.close()
         # reclaim leftover address
