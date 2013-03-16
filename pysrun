@@ -27,7 +27,6 @@ import atexit
 import signal
 import select
 import resource
-import stat
 import logging
 from ctypes import (CDLL, pointer, Structure, Union,
         c_void_p, c_char_p,
@@ -326,7 +325,7 @@ def get_address(ifname, family, ifaddrdict):
     return addr
 
 
-def become_daemon(stdin=None, stdout=None, stderr=None):
+def become_daemon(stdin=None, stdout=None, stderr=None, clearumask=False):
     """Become a daemon process before doing daemonic things.
     Return None.
 
@@ -337,7 +336,8 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     All file descriptors up to the known limit will be closed, and
     the standard streams re-opened upon return.
 
-    This function clears the umask.
+    This function clears the umask if clearumask is set to True (default
+    False).  If so, returns the old umask, otherwise -1.
 
     """
     # Ref1: Unix Programming FAQ, section 1.7,
@@ -379,7 +379,9 @@ def become_daemon(stdin=None, stdout=None, stderr=None):
     sys.stdout = open(path_o, "a+")
     sys.stderr = open(path_e, "a+", 0)
     os.chdir("/")   # Prevent fs unmountability
-    os.umask(0)
+    if clearumask:
+        return os.umask(0)
+    return -1
 
 
 def read_config_file(path, warn=False):
@@ -681,11 +683,6 @@ def daemon_cmdlistener(peersock, poller):
     pfd = peersock.fileno()
     ctrlsock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     ctrlfd = ctrlsock.fileno()
-    try:
-        os.fchmod(ctrlfd, stat.S_IRWXU & (~stat.S_IRWXG) & (~stat.S_IRWXO))
-    except OSError as os_e:
-        if os_e.errno != errno.EINVAL:  # BSD disallows fchmod on sockets.
-            raise
     ctrlsock.bind("/tmp/pysrun.sock")
     logging.debug("bound to socket address /tmp/pysrun.sock")
     poller.register(pfd, select.POLLIN)
