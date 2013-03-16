@@ -29,7 +29,6 @@ import select
 import resource
 import stat
 import logging
-import fcntl
 from ctypes import (CDLL, pointer, Structure, Union,
         c_void_p, c_char_p,
         c_uint32,
@@ -640,21 +639,6 @@ class _SigHandlerSafeLogger(object):
             self._log(message, args)
 
 
-def drain(fd):
-    """Read from fd until draining it.  Return bytes read."""
-    counter = 0
-    while True:
-        try:
-            buf = os.read(fd, 512)
-        except OSError as os_e:
-            if os_e.errno == errno.EAGAIN:  # drained
-                break
-            else:
-                raise
-        counter += len(buf)
-    return counter
-
-
 def daemon(cfg, num_info):
     """Daemon process."""
     # Signals that we should just ignore.
@@ -689,12 +673,7 @@ def daemon(cfg, num_info):
     else:  # child
         logging.debug("hearbeater started (uid %s)", num_info[0])
         psock.close()
-        spfds = os.pipe()
-        for fd in spfds:
-            flags = fcntl.fcntl(fd, fcntl.F_GETFL, 0) | os.O_NONBLOCK
-            fcntl.fcntl(fd, fcntl.F_SETFL, flags)
-        signal.set_wakeup_fd(spfds[1])
-        daemon_heartbeater(csock, spfds[0], poller, cfg, num_info)
+        daemon_heartbeater(csock, poller, cfg, num_info)
 
 
 def daemon_cmdlistener(peersock, poller):
@@ -727,14 +706,9 @@ def daemon_cmdlistener(peersock, poller):
     sys.exit(0)
 
 
-def daemon_heartbeater(peersock, spfd, poller, cfg, num_info):
-    """Daemon subprocess: heartbeater (child).
-    spfd is a non-block file descriptor used as the receiving
-    end of DJB's self-pipe hack.
-
-    """
+def daemon_heartbeater(peersock, poller, cfg, num_info):
+    """Daemon subprocess: heartbeater (child)."""
     pfd = peersock.fileno()
-    poller.register(spfd, select.POLLIN)
     poller.register(pfd, select.POLLIN)
     srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
     uidmsg = struct.pack("<q", num_info[0])
@@ -761,9 +735,6 @@ def daemon_heartbeater(peersock, spfd, poller, cfg, num_info):
         if pfd in statdict and (statdict[pfd] & select.POLLHUP):  # peer exit
             logging.debug("received peer exit event")
             break
-        if spfd in statdict and (statdict[spfd] & select.POLLIN): # self-pipe
-            logging.debug("last cycle interrupted")
-            drain(spfd)
         if not statdict:    # timeout
             msg = do_heartbeat(srvaddr, uidmsg, cfg["ipinuse"])
             if msg == -2:
