@@ -746,6 +746,9 @@ def daemon_heartbeater(peersock, spfd, poller, cfg, num_info):
         except select.error as se_e:
             if se_e.args[0] != errno.EINTR:
                 raise
+            # select() and poll() are not affected by siginterrupt()
+            # See Linux man page signal(7), FreeBSD signal(3),
+            # http://bugs.python.org/issue12224
             # Crazy PCLSR-esque stuff...
             logging.debug("poll interrupted, trying to restart")
             # Estimate the new timeout we need to put into poll() when we
