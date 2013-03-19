@@ -728,8 +728,9 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
             # Estimate the new timeout we need to put into poll() when we
             # recover from EINTR.
             now = time.time()
-            # Someone may have slewed the clock, or something went awful.
-            timeout -= max(0, int(1000 * (now - then)))
+            # The timeout should never increase, nor should it decrease to
+            # negative value.
+            timeout -= min(max(0, int(1000 * (now - then))), timeout)
             logging.debug("compensated next timeout %.3f", timeout / 1000.)
             continue
         if pfd in statdict and (statdict[pfd] & select.POLLHUP):  # peer exit
@@ -740,7 +741,7 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
             if msg == -2:
                 logging.info("received death ping from server")
                 break
-            timeout = 60000
+        timeout = 60000
     sys.exit(0)
 
 
