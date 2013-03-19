@@ -69,7 +69,7 @@ ERRMSG = {"username_error": "invalid username",
 # external processes.  I think I'm better just do it once.
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
 LIBC = CDLL(LIBC_NAME)
-PLATFORM = os.uname()[0].lower()
+PLATFORM = os.uname()[0].lower()        # XXX Really missing Debian/kFreeBSD
 
 
 # Implementation of getifaddrs()-based low-level function.
@@ -133,6 +133,8 @@ class _BSDMacFormatterMixin(object):
 
     """
     def __str__(self):
+        # Retrieve as unsigned char; we don't want negative numbers in
+        # textual representation.
         addrview_t = c_ubyte * self.sdl_alen
         macview = addrview_t.from_buffer(self.sdl_data, self.sdl_nlen)
         return ":".join(["%02x" % x for x in macview])
@@ -170,6 +172,10 @@ class _in_addr(Structure):  # pylint: disable=C0103,C0111
             ("s_addr", c_uint32)]
 
     def __str__(self):
+        # NOTE: inet_ntoa() takes care of the endianness of textual
+        # representation.  The endianness passed to struct.pack() is only
+        # used to, well, pack that number into a Python string, so it
+        # MUST NOT change the underlying endianness, i.e. MUST be "@" (native).
         return socket.inet_ntoa(struct.pack("@I", self.s_addr))
 
 
