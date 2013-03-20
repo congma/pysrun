@@ -43,6 +43,7 @@ CONFIG = {"address": "172.16.202.201",
         "uidfile": "~/.pysrun_uid",
         "interface": "eth0",
         "logpath": None}
+
 # Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
         "-P": "port",
@@ -52,6 +53,7 @@ OPT_CONFIG_MAP = {"-a": "address",
         "-i": "interface",
         "-d": "debug",
         "-l": "logpath"}
+
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
         "password_error": "possibly invalid password",
@@ -65,6 +67,7 @@ ERRMSG = {"username_error": "invalid username",
         # no user online
         "logout_error": "can't force logout (nobody logged in?)",
         "uid_error": "session ID mismatch"}  # uid_error could occur on logout
+
 # NOTE: Calling find_library to locate the dynamc C library will create
 # external processes.  I think I'm better just do it once.
 LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
@@ -168,8 +171,7 @@ class _bsd_long_sockaddr_dl(Structure, _BSDMacFormatterMixin):
 
 # struct in_addr: essentially common to Linux and BSD
 class _in_addr(Structure):  # pylint: disable=C0103,C0111
-    _fields_ = [
-            ("s_addr", c_uint32)]
+    _fields_ = [("s_addr", c_uint32)]
 
     def __str__(self):
         # NOTE: inet_ntoa() takes care of the endianness of textual
@@ -237,12 +239,12 @@ class _bsd_ifaddrs(Structure):  # pylint: disable=C0103,C0111
 
 # Platform-specific initialization
 if PLATFORM == "linux":
-    AF_LINK = socket.AF_PACKET
+    AF_ETHERNET = socket.AF_PACKET
 else:
     # According to FreeBSD doc, this is AF_LINK.  See sys/socket.h
     # Currently, this is true for all BSDs we consider.
     # http://www.freebsd.org/doc/en/books/developers-handbook/sockets-essential-functions.html
-    AF_LINK = 18
+    AF_ETHERNET = 18
 # The values of the lookup table are tuples organized by index:
 # 0: The equivalent of struct ifaddrs, see ifaddrs.h, getifaddrs(3).
 # 1: A dictionary with address families as keys and corresponding
@@ -250,23 +252,23 @@ else:
 # 2: The equivalent of struct sockaddr, see sys/socket.h.
 PLATFORM_LOOKUP = {
     "linux": (_linux_ifaddrs,
-        {AF_LINK: _linux_sockaddr_ll,
+        {AF_ETHERNET: _linux_sockaddr_ll,
         socket.AF_INET: _linux_sockaddr_in},
         _linux_sockaddr),
     "freebsd": (_bsd_ifaddrs,
-        {AF_LINK: _bsd_long_sockaddr_dl,
+        {AF_ETHERNET: _bsd_long_sockaddr_dl,
         socket.AF_INET: _bsd_sockaddr_in},
         _bsd_sockaddr),
     "dragonfly": (_bsd_ifaddrs,
-        {AF_LINK: _bsd_long_sockaddr_dl,
+        {AF_ETHERNET: _bsd_long_sockaddr_dl,
         socket.AF_INET: _bsd_sockaddr_in},
         _bsd_sockaddr),
     "netbsd": (_bsd_ifaddrs,
-        {AF_LINK: _bsd_short_sockaddr_dl,
+        {AF_ETHERNET: _bsd_short_sockaddr_dl,
         socket.AF_INET: _bsd_sockaddr_in},
         _bsd_sockaddr),
     "openbsd": (_bsd_ifaddrs,
-        {AF_LINK: _bsd_short_sockaddr_dl,
+        {AF_ETHERNET: _bsd_short_sockaddr_dl,
         socket.AF_INET: _bsd_sockaddr_in},
         _bsd_sockaddr)}
 
@@ -297,17 +299,21 @@ def getaddrs():
             result[name] = {}
             for family in familydict:
                 result[name][family] = []
-        # Some interface (such as a TUN virtual network) doesn't give us
-        # ifa_addr at all and we can usually skip them because they're hardly
-        # relevant for our usage case.
+
+        # ifa.ifa_addr could be null pointer, see FreeBSD manual for
+        # getifaddrs(3)
         if ifa.ifa_addr:
-            saddr = sockaddr.from_address(ifa.ifa_addr)
-            for family, sockaddr_xx in familydict.iteritems():
-                if saddr.sa_family == family:
-                    sinterf = sockaddr_xx.from_address(ifa.ifa_addr)
-                    addr = "%s" % sinterf
-                    if addr:
-                        result[name][family].append(addr)
+            saddr_generic = sockaddr.from_address(ifa.ifa_addr)
+            try:
+                sockaddr_type = familydict[saddr_generic.sa_family]
+            except KeyError:
+                pass
+            else:
+                saddr_specific = sockaddr_type.from_address(ifa.ifa_addr)
+                addrtxt = "%s" % saddr_specific
+                if addrtxt:
+                    result[name][saddr_generic.sa_family].append(addrtxt)
+
         if ifa.ifa_next:
             ifa = ifaddrs.from_address(ifa.ifa_next)
         else:
@@ -354,15 +360,17 @@ def become_daemon(stdin=None, stdout=None, stderr=None, clearumask=False):
     # section 9.13 http://onlamp.com/python/pythoncook2/solution.csp?day=1
     # Ref4: http://code.activestate.com/recipes/278731-creating-a-daemon-the-python-way/
     # Make sure we are not process group leader and not possessing controlling
-    # terminal
+    # terminal.
     try:
         pid = os.fork()
     except OSError as os_e:
         error("login (fork 1)", os_e, server=False, exitp=True, exitcode=4)
     if pid:  # parent
         os._exit(os.EX_OK)  # pylint: disable=W0212
+
     # Detaching from parent environment
     os.setsid()     # Run in new session
+
     # Become a non-leader
     try:
         pid = os.fork()
@@ -370,6 +378,7 @@ def become_daemon(stdin=None, stdout=None, stderr=None, clearumask=False):
         error("login (fork 2)", os_e, server=False, exitp=True, exitcode=1)
     if pid:
         os._exit(os.EX_OK)  # pylint: disable=W0212
+
     # Close all inherited file descriptors.  Note that not even the standard
     # input/output/errors are kept, because we've no idea where they're
     # redirected.
@@ -379,10 +388,12 @@ def become_daemon(stdin=None, stdout=None, stderr=None, clearumask=False):
     os.closerange(0, maxnofile)
     path_i, path_o, path_e = (os.devnull if x is None else \
             abspath(expanduser(x)) for x in (stdin, stdout, stderr))
+
     # Reopen standard streams.  Should guarantee stdin is 0, stdout 1, etc.
     sys.stdin = open(path_i, "r")
     sys.stdout = open(path_o, "a+")
     sys.stderr = open(path_e, "a+", 0)
+
     os.chdir("/")   # Prevent fs unmountability
     if clearumask:
         return os.umask(0)
@@ -664,8 +675,10 @@ def daemon(cfg, num_info):
         signal.siginterrupt(sig, False)  # Restart interrupted system call
     for sig in trmsigs:
         signal.signal(sig, trm_handler)
+
     atexit.register(_logexit, logging)
     atexit.register(_unbind_control_sock, logging)
+
     # The rationale of using stream socket is to get a peer HUP event on
     # peer exit.  This can be used to monitor peer death even if it's uncleanly
     # killed.  Stream UDS is essentially full-duplex pipe, see W. Richard
@@ -690,8 +703,10 @@ def daemon_cmdlistener(peersock, poller):
     ctrlfd = ctrlsock.fileno()
     ctrlsock.bind("/tmp/pysrun.sock")
     logging.debug("bound to socket address /tmp/pysrun.sock")
+
     poller.register(pfd, select.POLLIN)
     poller.register(ctrlfd, select.POLLIN)
+
     while True:
         # Guard slow system call against EINTR
         # see http://utcc.utoronto.ca/~cks/space/blog/python/SiginterruptGotcha
@@ -718,6 +733,7 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
     poller.register(pfd, select.POLLIN)
     srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
     uidmsg = struct.pack("<q", num_info[0])
+
     timeout = 60000  # 1 min in milliseconds
     while True:
         then = time.time()
@@ -816,7 +832,7 @@ def login(cfg):
     """
     url = "http://%s:%s/cgi-bin/do_login" % (cfg["address"], cfg["port"])
     try:
-        mac = get_address(cfg["interface"], AF_LINK, cfg["ifaddrs"])
+        mac = get_address(cfg["interface"], AF_ETHERNET, cfg["ifaddrs"])
     except ValueError as val_e:
         error("login", "no MAC address information for interface (%s)" % val_e,
                 exitcode=4)
@@ -1053,6 +1069,7 @@ def human_enum(strlist):
 def main():  # pylint: disable=C0111
     optspec = "hc:dI"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
+
     # Get options and arguments, emit help message on bad options.
     try:
         oplist, args = getopt.gnu_getopt(sys.argv[1:], optspec)
@@ -1063,6 +1080,7 @@ def main():  # pylint: disable=C0111
     if "-h" in opdict:  # Exit as early as possible if "-h" is in options.
         show_usage(fail=False)
         sys.exit(0)
+
     # Determine the operation from cmdline, fail if none find.
     operation_table = {"login": login,
             "logout": logout,
@@ -1071,6 +1089,7 @@ def main():  # pylint: disable=C0111
     if len(valid_oprs) != 1:  # One and only one operation allowed.
         show_usage(fail=True)
     the_opr = valid_oprs.pop()
+
     # Update config info from all sources we have.
     config_from_cmdline = transform_to_config(opdict)
     config_path = expanduser(opdict.get("-c", "~/.pysrun.cfg"))
@@ -1079,16 +1098,20 @@ def main():  # pylint: disable=C0111
     except IOError as io_e:
         error("config", "can't read configuration file (%s)" % io_e,
                 exitcode=4)
+
     # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
     CONFIG.update(config_from_cmdline)
+
     # Interactive password overrides all other forms of password input.
     if "-I" in opdict and the_opr != "logout":
         CONFIG["password"] = getpass.getpass()
+
     # Validation of config and its values.
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"],
                 exitcode=2)
+
     # Kicking can use whatever connection available, but log-in/-out
     # requires address matching (XXX: not tested yet)
     required_keys = {"login": ["username", "password", "interface"],
@@ -1099,6 +1122,7 @@ def main():  # pylint: disable=C0111
                 (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
                     human_enum(required_keys[the_opr])),
                 exitcode=2)
+
     # All operations needs to know the current network status
     CONFIG["ifaddrs"] = getaddrs()
     operation_table[the_opr](CONFIG)
