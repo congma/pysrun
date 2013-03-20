@@ -230,6 +230,7 @@ fails to work at all.
 see [Linux commit 29c486df][29c486df].  This happens to be what the official
 client does, so it happens to work again.  Admittedly this renders our last
 argument moot.
+
 * Its operation mode is frequently disabled by BNU on the server side.
 
 BNU provides another, GTK-based GUI client in 32- and 64-bit flavors.  It
