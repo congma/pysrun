@@ -68,10 +68,6 @@ ERRMSG = {"username_error": "invalid username",
         "logout_error": "can't force logout (nobody logged in?)",
         "uid_error": "session ID mismatch"}  # uid_error could occur on logout
 
-# NOTE: Calling find_library to locate the dynamc C library will create
-# external processes.  I think I'm better just do it once.
-LIBC_NAME = find_library("c")           # E.g. "libc.so.6"
-LIBC = CDLL(LIBC_NAME)
 PLATFORM = os.uname()[0].lower()        # XXX Really missing Debian/kFreeBSD
 
 
@@ -136,11 +132,15 @@ class _BSDMacFormatterMixin(object):
 
     """
     def __str__(self):
-        # Retrieve as unsigned char; we don't want negative numbers in
-        # textual representation.
-        addrview_t = c_ubyte * self.sdl_alen
-        macview = addrview_t.from_buffer(self.sdl_data, self.sdl_nlen)
-        return ":".join(["%02x" % x for x in macview])
+        if not hasattr(self, "_macview"):
+            # Prepare for viewing the address as a text string (RFC 5342)
+            # Retrieve as unsigned char; we don't want negative numbers in
+            # textual representation.
+            # ctypes is smart enough to handle sdl_alen == 0...
+            addrview_t = c_ubyte * self.sdl_alen
+            self._macview = addrview_t.from_buffer(self.sdl_data,
+                    self.sdl_nlen)
+        return ":".join(["%02x" % x for x in self._macview])
 
 
 # The "short data" is used by NetBSD / OpenBSD.  The difference is subtle,
@@ -155,6 +155,7 @@ class _bsd_short_sockaddr_dl(Structure, _BSDMacFormatterMixin):
             ("sdl_alen", c_uint8),
             ("sdl_slen", c_uint8),
             ("sdl_data", (c_byte * 12))]
+
 
 # The "long data" version is used by FreeBSD / DragonFlyBSD (net/if_dh.h)
 class _bsd_long_sockaddr_dl(Structure, _BSDMacFormatterMixin):
@@ -284,10 +285,13 @@ def getaddrs():
     This function calls the platform's getifaddrs() implementation.
 
     """
+    # NOTE: Calling find_library to locate the dynamc C library will create
+    # external processes.  I think I'm better just do it once.
+    libc = CDLL(find_library("c"))
     # struct ifaddrs, dict of address families, struct sockaddr
     ifaddrs, familydict, sockaddr = PLATFORM_LOOKUP[PLATFORM]
     ptr = c_void_p(None)
-    if LIBC.getifaddrs(pointer(ptr)) != 0:
+    if libc.getifaddrs(pointer(ptr)) != 0:
         return {}
     ifa = ifaddrs.from_address(ptr.value)
     result = {}
@@ -319,7 +323,7 @@ def getaddrs():
         else:
             break
 
-    LIBC.freeifaddrs(ptr)
+    libc.freeifaddrs(ptr)
     return result
 
 
