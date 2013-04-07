@@ -1057,6 +1057,7 @@ def transform_to_config(inputdic):
 
 def isvalidport(txt):
     """Returns True if txt represents a valid TCP port (in dec)."""
+    # Built into urlparse since Python 2.7.4, see Python issue #12856
     return txt.isdigit() and int(txt) <= 65535 and int(txt) >= 0
 
 
@@ -1112,6 +1113,7 @@ def main():  # pylint: disable=C0111
         CONFIG["password"] = getpass.getpass()
 
     # Validation of config and its values.
+    # Not needed after Python 2.7.4, but we fail as early as possible...
     if not isvalidport(CONFIG["port"]):
         error("config", "invalid port number (%s)" % CONFIG["port"],
                 exitcode=2)
