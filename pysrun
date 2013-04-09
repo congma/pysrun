@@ -648,7 +648,7 @@ class _SigHandlerSafeLogger(object):
         self.logfd = stream.fileno()
         self.isenabled = isenabled
 
-    def _log(self, message, args):
+    def _log(self, message, args):  # pylint: disable=C0111
         our_message = (message % args) if args else message
         now = datetime.datetime.now()
         tstamp = now.strftime(r"%F %T") + \
@@ -656,7 +656,7 @@ class _SigHandlerSafeLogger(object):
         text = "[%s] %s:SIGHANDLER:%s\n" % (tstamp, os.getpid(), our_message)
         os.write(self.logfd, text)
 
-    def debug(self, message, *args):
+    def debug(self, message, *args):  # pylint: disable=C0111
         if self.isenabled:
             self._log(message, args)
 
@@ -886,15 +886,18 @@ def login(cfg):
         # Success with getting the uid
         write_uid(num_info[0], expanduser(cfg["uidfile"]))
         cleanup_daemon_leftover()
-        # Forking into background a heartbeat keeper.
-        become_daemon(stderr=cfg["logpath"])
-        daemon(cfg, num_info)
-        # The control flow should be handed to daemon() in another
-        # process so there's no need of leaving the while loop.
+        return num_info
     # If the program ever reaches here, we have a server-generated error.
     # We should strip any possible @timestamp tails before signalling.
     msg += "s"  # sentinel
     error("login", msg[:msg.find("@")], server=True)
+
+
+def post_login_hook(*args):
+    """Things to do after login."""
+    num_info = args[0]
+    become_daemon(stderr=CONFIG["logpath"])
+    daemon(CONFIG, num_info)
 
 
 def _get_info_from_msg(text):
@@ -1079,7 +1082,16 @@ def human_enum(strlist):
     return " and ".join([hstr] + tail if hstr else tail)
 
 
-def main():  # pylint: disable=C0111
+def validate_for_main():
+    """Returns a tuple (opr_fcn, post_opr_hook_fcn)
+
+    The first element, opr_fcn, should be called on CONFIG to fulfill
+    the operation.  The other, post_opr_hook_fcn, if not None, should
+    be called on the return value of opr_fcn.
+
+    This function has the side effect of updating CONFIG.
+
+    """
     optspec = "hc:dI"
     optspec += "".join([("%s:" % key.strip("-")) for key in OPT_CONFIG_MAP])
 
@@ -1095,9 +1107,9 @@ def main():  # pylint: disable=C0111
         sys.exit(0)
 
     # Determine the operation from cmdline, fail if none find.
-    operation_table = {"login": login,
-            "logout": logout,
-            "kick": kick}
+    operation_table = {"login": (login, post_login_hook),
+            "logout": (logout, None),
+            "kick": (kick, None)}
     valid_oprs = operation_table.viewkeys() & args
     if len(valid_oprs) != 1:  # One and only one operation allowed.
         show_usage(fail=True)
@@ -1139,8 +1151,12 @@ def main():  # pylint: disable=C0111
 
     # All operations needs to know the current network status
     CONFIG["ifaddrs"] = getaddrs()
-    operation_table[the_opr](CONFIG)
+    return operation_table[the_opr]
 
 
 if __name__ == "__main__":
-    main()
+    # pylint: disable=C0103
+    opr, posthook = validate_for_main()
+    opr_retv = opr(CONFIG)
+    if posthook:
+        posthook(opr_retv)
