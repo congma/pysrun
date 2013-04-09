@@ -735,8 +735,12 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
     """Daemon subprocess: heartbeater (child)."""
     pfd = peersock.fileno()
     poller.register(pfd, select.POLLIN)
-    srvaddr = (socket.gethostbyname(cfg["address"]), 3335)
+    server_addr = (socket.gethostbyname(cfg["address"]), 3335)
+    our_addr = (cfg["ipinuse"], 0)
     uidmsg = struct.pack("<q", num_info[0])
+
+    recv_barray = bytearray(32)  # XXX hard-coded, 2 times server return length
+    recv_bufview = buffer(recv_barray, 0, 8)
 
     timeout = 60000  # 1 min in milliseconds
     while True:
@@ -763,7 +767,8 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
             logging.debug("received peer exit event")
             break
         if not statdict:    # timeout
-            msg = do_heartbeat(srvaddr, uidmsg, cfg["ipinuse"])
+            msg = do_heartbeat(our_addr, server_addr,
+                    uidmsg, recv_barray, recv_bufview)
             if msg == -2:
                 logging.info("received death ping from server")
                 break
@@ -771,7 +776,7 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
     sys.exit(0)
 
 
-def do_heartbeat(srvaddr, message, local_ip=""):
+def do_heartbeat(srcaddr, dstaddr, message, buf, bufview):
     """Once-per-minute UDP heartbeat.
     Return the "signed long long" data received from server on succcess.
     If the server times out in 0.5 seconds, or sends what we perceive as
@@ -780,26 +785,29 @@ def do_heartbeat(srvaddr, message, local_ip=""):
     """
     retnum = None
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((local_ip, 0))
-    sock.sendto(message, srvaddr)
+    sock.bind(srcaddr)
+    sock.sendto(message, dstaddr)
     logging.debug("heartbeat message sent to server (%r, %s:%s)",
-            message, *srvaddr)
+            message, *dstaddr)
     # 0.5 seconds of recv timeout should be long enough
     # for communication and short enough for performance.
     sock.settimeout(0.5)
     try:
-        retmsg = sock.recvfrom(128)
+        length, address = sock.recvfrom_into(buf)
     except socket.timeout:
         logging.warning("server timed out for returning heartbeat")
         # Ignore it? Don't know what should be done...
     else:
-        if retmsg[1] == srvaddr:    # received message is from server
+        if length != 16:  # unexpected length, possibly corrupted
+            logging.warning("unexpected server response length: %s (%r)",
+                    length, buf[0:length])
+        elif address == dstaddr:    # received message is from server
             # Don't ask about the endianness...
-            retnum = struct.unpack("<q", retmsg[0][:8])[0]
+            retnum = struct.unpack("<q", bufview)[0]
             logging.debug("received server hearbeat (%s)", retnum)
         else:
             logging.warning("response not from server (%r, %s:%s)",
-                    retmsg[0], *retmsg[1])
+                    buf[0:length], *address)
     finally:
         sock.close()
     return retnum
