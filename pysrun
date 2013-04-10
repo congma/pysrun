@@ -1069,7 +1069,7 @@ def transform_to_config(inputdic):
 def isvalidport(txt):
     """Returns True if txt represents a valid TCP port (in dec)."""
     # Built into urlparse since Python 2.7.4, see Python issue #12856
-    return txt.isdigit() and int(txt) <= 65535 and int(txt) >= 0
+    return txt.isdigit() and 0 <= int(txt) <= 65535
 
 
 def human_enum(strlist):
