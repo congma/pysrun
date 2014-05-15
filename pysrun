@@ -29,44 +29,45 @@ import select
 import resource
 import logging
 from ctypes import (CDLL, pointer, Structure, Union,
-        c_void_p, c_char_p,
-        c_uint32,
-        c_uint8, c_uint16,
-        c_ushort, c_uint, c_int,
-        c_byte, c_ubyte)
+                    c_void_p, c_char_p,
+                    c_uint32,
+                    c_uint8, c_uint16,
+                    c_ushort, c_uint, c_int,
+                    c_byte, c_ubyte)
 from ctypes.util import find_library
 
 
 # Default configuration option values.
 CONFIG = {"address": "172.16.202.201",
-        "port": "3333",
-        "uidfile": "~/.pysrun_uid",
-        "interface": "eth0",
-        "logpath": None}
+          "port": "3333",
+          "uidfile": "~/.pysrun_uid",
+          "interface": "eth0",
+          "logpath": None}
 
 # Mapping command-line options to configuration keys
 OPT_CONFIG_MAP = {"-a": "address",
-        "-P": "port",
-        "-u": "username",
-        "-p": "password",
-        "-s": "uidfile",
-        "-i": "interface",
-        "-d": "debug",
-        "-l": "logpath"}
+                  "-P": "port",
+                  "-u": "username",
+                  "-p": "password",
+                  "-s": "uidfile",
+                  "-i": "interface",
+                  "-d": "debug",
+                  "-l": "logpath"}
 
 # Server error message table. This, too, is just guesses.
 ERRMSG = {"username_error": "invalid username",
-        "password_error": "possibly invalid password",
-        "ip_exist_error": "already authenticated",
-        "online_num_error": "maximal number of online users exceeded",
-        "version_error": "request rejected by server",
-        "status_error": "payment required",
-        "sync_error": "server sync not complete, try later",
-        "mode_error": "authentication mode disabled by server",
-        # logout_error seems to only occur when you do a kick with
-        # no user online
-        "logout_error": "can't force logout (nobody logged in?)",
-        "uid_error": "session ID mismatch"}  # uid_error could occur on logout
+          "password_error": "possibly invalid password",
+          "ip_exist_error": "already authenticated",
+          "online_num_error": "maximal number of online users exceeded",
+          "version_error": "request rejected by server",
+          "status_error": "payment required",
+          "sync_error": "server sync not complete, try later",
+          "mode_error": "authentication mode disabled by server",
+          # logout_error seems to only occur when you do a kick with
+          # no user online
+          "logout_error": "can't force logout (nobody logged in?)",
+          # uid_error could occur on logout
+          "uid_error": "session ID mismatch"}
 
 PLATFORM = os.uname()[0].lower()        # XXX Really missing Debian/kFreeBSD
 
@@ -82,39 +83,35 @@ PLATFORM = os.uname()[0].lower()        # XXX Really missing Debian/kFreeBSD
 # the peer cannot be dst and brd at the same time).  On BSD the struct ifaddrs
 # has two members for broadcast and destination separately.
 class _linux_ifa_ifu_u(Union):  # pylint: disable=C0103,C0111
-    _fields_ = [
-            ("ifu_broadaddr", c_void_p),
-            ("ifu_dstaddr", c_void_p)]
+    _fields_ = [("ifu_broadaddr", c_void_p),
+                ("ifu_dstaddr", c_void_p)]
 
 
 # sockaddr-related structures
 # For generic/unknown address family
 class _bsd_sockaddr(Structure):  # pylint: disable=C0103,C0111
     # BSD sys/socket.h
-    _fields_ = [
-            ("sa_len", c_ubyte),
-            ("sa_family", c_uint8),
-            ("sa_data", (c_byte * 14))]
+    _fields_ = [("sa_len", c_ubyte),
+                ("sa_family", c_uint8),
+                ("sa_data", (c_byte * 14))]
 
 
 class _linux_sockaddr(Structure):  # pylint: disable=C0103,C0111
     # Linux linux/socket.h
-    _fields_ = [
-            ("sa_family", c_ushort),
-            ("sa_data", (c_byte * 14))]
+    _fields_ = [("sa_family", c_ushort),
+                ("sa_data", (c_byte * 14))]
 
 
 # AF_PACKET / Linux
 # Linux header: linux/if_packet.h, struct sockaddr_ll
 class _linux_sockaddr_ll(Structure):  # pylint: disable=C0103,C0111
-    _fields_ = [
-            ("sll_family", c_ushort),
-            ("sll_protocol", c_uint16),
-            ("sll_ifindex", c_int),
-            ("sll_hatype", c_ushort),
-            ("sll_pkttype", c_ubyte),
-            ("sll_halen", c_ubyte),
-            ("sll_addr", (c_ubyte * 8))]
+    _fields_ = [("sll_family", c_ushort),
+                ("sll_protocol", c_uint16),
+                ("sll_ifindex", c_int),
+                ("sll_hatype", c_ushort),
+                ("sll_pkttype", c_ubyte),
+                ("sll_halen", c_ubyte),
+                ("sll_addr", (c_ubyte * 8))]
 
     def __str__(self):
         return ":".join(["%02x" % x for x in self.sll_addr[:self.sll_halen]])
@@ -139,35 +136,33 @@ class _BSDMacFormatterMixin(object):
             # ctypes is smart enough to handle sdl_alen == 0...
             addrview_t = c_ubyte * self.sdl_alen
             self._macview = addrview_t.from_buffer(self.sdl_data,
-                    self.sdl_nlen)
+                                                   self.sdl_nlen)
         return ":".join(["%02x" % x for x in self._macview])
 
 
 # The "short data" is used by NetBSD / OpenBSD.  The difference is subtle,
 # as the 12-char data is defined as *minimum* requirement. (net/if_dh.h)
 class _bsd_short_sockaddr_dl(Structure, _BSDMacFormatterMixin):
-    _fields_ = [
-            ("sdl_len", c_uint8),
-            ("sdl_family", c_uint8),
-            ("sdl_index", c_uint16),
-            ("sdl_type", c_uint8),
-            ("sdl_nlen", c_uint8),
-            ("sdl_alen", c_uint8),
-            ("sdl_slen", c_uint8),
-            ("sdl_data", (c_byte * 12))]
+    _fields_ = [("sdl_len", c_uint8),
+                ("sdl_family", c_uint8),
+                ("sdl_index", c_uint16),
+                ("sdl_type", c_uint8),
+                ("sdl_nlen", c_uint8),
+                ("sdl_alen", c_uint8),
+                ("sdl_slen", c_uint8),
+                ("sdl_data", (c_byte * 12))]
 
 
 # The "long data" version is used by FreeBSD / DragonFlyBSD (net/if_dh.h)
 class _bsd_long_sockaddr_dl(Structure, _BSDMacFormatterMixin):
-    _fields_ = [
-            ("sdl_len", c_ubyte),
-            ("sdl_family", c_ubyte),
-            ("sdl_index", c_ushort),
-            ("sdl_type", c_ubyte),
-            ("sdl_nlen", c_ubyte),
-            ("sdl_alen", c_ubyte),
-            ("sdl_slen", c_ubyte),
-            ("sdl_data", (c_byte * 46))]
+    _fields_ = [("sdl_len", c_ubyte),
+                ("sdl_family", c_ubyte),
+                ("sdl_index", c_ushort),
+                ("sdl_type", c_ubyte),
+                ("sdl_nlen", c_ubyte),
+                ("sdl_alen", c_ubyte),
+                ("sdl_slen", c_ubyte),
+                ("sdl_data", (c_byte * 46))]
 
 
 # struct in_addr: essentially common to Linux and BSD
@@ -194,48 +189,44 @@ class _INETFormatterMixin(object):
 
 # BSD AF_INET (IPv4): netinet/in.h
 class _bsd_sockaddr_in(Structure, _INETFormatterMixin):
-    _fields_ = [
-            ("sin_len", c_uint8),
-            ("sin_family", c_uint8),
-            ("sin_port", c_uint16),
-            ("sin_addr", _in_addr),
-            ("sin_zero", (c_byte * 8))]
+    _fields_ = [("sin_len", c_uint8),
+                ("sin_family", c_uint8),
+                ("sin_port", c_uint16),
+                ("sin_addr", _in_addr),
+                ("sin_zero", (c_byte * 8))]
 
 
 # Linux AF_INET: linux/in.h
 class _linux_sockaddr_in(Structure, _INETFormatterMixin):
-    _fields_ = [
-            ("sin_family", c_ushort),
-            ("sin_port", c_uint16),
-            ("sin_addr", _in_addr),
-            ("sin_zero", (c_ubyte * 8))]
+    _fields_ = [("sin_family", c_ushort),
+                ("sin_port", c_uint16),
+                ("sin_addr", _in_addr),
+                ("sin_zero", (c_ubyte * 8))]
 
 
 # struct ifaddrs, see getifaddrs(3) man page.
 # Linux: pointers to brd and dst form a union, takes one member in
 # struct ifaddrs.
 class _linux_ifaddrs(Structure):  # pylint: disable=C0103,C0111
-    _fields_ = [
-            ("ifa_next", c_void_p),
-            ("ifa_name", c_char_p),
-            ("ifa_flags", c_uint),
-            ("ifa_addr", c_void_p),
-            ("ifa_netmask", c_void_p),
-            ("ifa_ifu", _linux_ifa_ifu_u),
-            ("ifa_data", c_void_p)]
+    _fields_ = [("ifa_next", c_void_p),
+                ("ifa_name", c_char_p),
+                ("ifa_flags", c_uint),
+                ("ifa_addr", c_void_p),
+                ("ifa_netmask", c_void_p),
+                ("ifa_ifu", _linux_ifa_ifu_u),
+                ("ifa_data", c_void_p)]
 
 
 # BSD: pointers to brd and dst are two members.
 class _bsd_ifaddrs(Structure):  # pylint: disable=C0103,C0111
-    _fields_ = [
-            ("ifa_next", c_void_p),
-            ("ifa_name", c_char_p),
-            ("ifa_flags", c_uint),
-            ("ifa_addr", c_void_p),
-            ("ifa_netmask", c_void_p),
-            ("ifa_broadaddr", c_void_p),
-            ("ifa_dstaddr", c_void_p),
-            ("ifa_data", c_void_p)]
+    _fields_ = [("ifa_next", c_void_p),
+                ("ifa_name", c_char_p),
+                ("ifa_flags", c_uint),
+                ("ifa_addr", c_void_p),
+                ("ifa_netmask", c_void_p),
+                ("ifa_broadaddr", c_void_p),
+                ("ifa_dstaddr", c_void_p),
+                ("ifa_data", c_void_p)]
 
 
 # Platform-specific initialization
@@ -253,25 +244,25 @@ else:
 # 2: The equivalent of struct sockaddr, see sys/socket.h.
 PLATFORM_LOOKUP = {
     "linux": (_linux_ifaddrs,
-        {AF_ETHERNET: _linux_sockaddr_ll,
-        socket.AF_INET: _linux_sockaddr_in},
-        _linux_sockaddr),
+              {AF_ETHERNET: _linux_sockaddr_ll,
+               socket.AF_INET: _linux_sockaddr_in},
+              _linux_sockaddr),
     "freebsd": (_bsd_ifaddrs,
-        {AF_ETHERNET: _bsd_long_sockaddr_dl,
-        socket.AF_INET: _bsd_sockaddr_in},
-        _bsd_sockaddr),
+                {AF_ETHERNET: _bsd_long_sockaddr_dl,
+                 socket.AF_INET: _bsd_sockaddr_in},
+                _bsd_sockaddr),
     "dragonfly": (_bsd_ifaddrs,
-        {AF_ETHERNET: _bsd_long_sockaddr_dl,
-        socket.AF_INET: _bsd_sockaddr_in},
-        _bsd_sockaddr),
+                  {AF_ETHERNET: _bsd_long_sockaddr_dl,
+                   socket.AF_INET: _bsd_sockaddr_in},
+                  _bsd_sockaddr),
     "netbsd": (_bsd_ifaddrs,
-        {AF_ETHERNET: _bsd_short_sockaddr_dl,
-        socket.AF_INET: _bsd_sockaddr_in},
-        _bsd_sockaddr),
+               {AF_ETHERNET: _bsd_short_sockaddr_dl,
+                socket.AF_INET: _bsd_sockaddr_in},
+               _bsd_sockaddr),
     "openbsd": (_bsd_ifaddrs,
-        {AF_ETHERNET: _bsd_short_sockaddr_dl,
-        socket.AF_INET: _bsd_sockaddr_in},
-        _bsd_sockaddr)}
+                {AF_ETHERNET: _bsd_short_sockaddr_dl,
+                 socket.AF_INET: _bsd_sockaddr_in},
+                _bsd_sockaddr)}
 
 
 def getaddrs():
@@ -390,8 +381,8 @@ def become_daemon(stdin=None, stdout=None, stderr=None, clearumask=False):
     if maxnofile == resource.RLIM_INFINITY:
         maxnofile = 1024
     os.closerange(0, maxnofile)
-    path_i, path_o, path_e = (os.devnull if x is None else \
-            abspath(expanduser(x)) for x in (stdin, stdout, stderr))
+    path_i, path_o, path_e = (os.devnull if x is None else abspath(
+        expanduser(x)) for x in (stdin, stdout, stderr))
 
     # Reopen standard streams.  Should guarantee stdin is 0, stdout 1, etc.
     sys.stdin = open(path_i, "r")
@@ -422,7 +413,8 @@ def read_config_file(path, warn=False):
         except CfgLineIsGarbage as garb:
             if warn and not garb.isblank:
                 print >> sys.stderr, ("Debug: %s: line %d: column %d: "
-                        "garbage in\n%s" % (path, lineno, garb.col, garb))
+                                      "garbage in\n%s" % (path, lineno,
+                                                          garb.col, garb))
             continue
         result.update(record)
     fhandle.close()
@@ -531,7 +523,7 @@ def encode_txt(plaintxt, keytxt):
     ordder = lambda s: [ord(c) for c in s]
     plain_asc = ordder(plaintxt)
     key_asc = ordder(padded_key)
-    tmp = map(lambda x, y: x ^ y, plain_asc, key_asc)  # pylint: disable=W0141
+    tmp = [x ^ y for x, y in zip(plain_asc, key_asc)]
     res = []
     for i in xrange(len(tmp)):
         lowpar = chr((tmp[i] & 0x0f) + 0x36)
@@ -561,7 +553,7 @@ class BoundHTTPHandler(urllib2.HTTPHandler):
         # urllib2.HTTPHandler is an old-style class so no super() call.
         urllib2.HTTPHandler.__init__(self, debuglevel)
         self.http_class = functools.partial(httplib.HTTPConnection,
-                source_address=source_address)
+                                            source_address=source_address)
 
     def http_open(self, req):
         return self.do_open(self.http_class, req)
@@ -585,7 +577,7 @@ def communicate_to_server(url, postdata, prefix, local_ip=""):
         docf = opener.open(url, postdata)
     except urllib2.URLError as url_e:
         error(prefix, "can't communicate to server (%s)" % url_e.reason,
-                exitcode=4)
+              exitcode=4)
     msg = docf.read()
     docf.close()
     return msg
@@ -651,8 +643,7 @@ class _SigHandlerSafeLogger(object):
     def _log(self, message, args):  # pylint: disable=C0111
         our_message = (message % args) if args else message
         now = datetime.datetime.now()
-        tstamp = now.strftime(r"%F %T") + \
-                ",%03d" % (now.microsecond / 1000)
+        tstamp = now.strftime(r"%F %T") + ",%03d" % (now.microsecond / 1000)
         text = "[%s] %s:SIGHANDLER:%s\n" % (tstamp, os.getpid(), our_message)
         os.write(self.logfd, text)
 
@@ -667,10 +658,11 @@ def daemon(cfg, num_info):
     ignsigs = [signal.SIGHUP, signal.SIGALRM, signal.SIGUSR1, signal.SIGUSR2]
     # Signals that we should handle by gracefully exit.
     trmsigs = [signal.SIGTERM]
-    logging.basicConfig(format="[%(asctime)s] %(process)d:" \
-            "%(levelname)s:%(message)s",
-            level=(logging.DEBUG if "debug" in cfg else logging.INFO),
-            stream=sys.stderr)
+    logging.basicConfig(format="[%(asctime)s] %(process)d:"
+                        "%(levelname)s:%(message)s",
+                        level=(logging.DEBUG
+                               if "debug" in cfg else logging.INFO),
+                        stream=sys.stderr)
     logging_shsafe = _SigHandlerSafeLogger(isenabled=("debug" in cfg))
     ign_handler = handler_factory(logging_shsafe, terminate=False)
     trm_handler = handler_factory(logging_shsafe, terminate=True)
@@ -768,7 +760,7 @@ def daemon_heartbeater(peersock, poller, cfg, num_info):
             break
         if not statdict:    # timeout
             msg = do_heartbeat(our_addr, server_addr,
-                    uidmsg, recv_barray, recv_bufview)
+                               uidmsg, recv_barray, recv_bufview)
             if msg == -2:
                 logging.info("received death ping from server")
                 break
@@ -788,7 +780,7 @@ def do_heartbeat(srcaddr, dstaddr, message, buf, bufview):
     sock.bind(srcaddr)
     sock.sendto(message, dstaddr)
     logging.debug("heartbeat message sent to server (%r, %s:%s)",
-            message, *dstaddr)
+                  message, *dstaddr)
     # 0.5 seconds of recv timeout should be long enough
     # for communication and short enough for performance.
     sock.settimeout(0.5)
@@ -800,14 +792,14 @@ def do_heartbeat(srcaddr, dstaddr, message, buf, bufview):
     else:
         if length != 16:  # unexpected length, possibly corrupted
             logging.warning("unexpected server response length: %s (%r)",
-                    length, buf[0:length])
+                            length, buf[0:length])
         elif address == dstaddr:    # received message is from server
             # Don't ask about the endianness...
             retnum = struct.unpack("<q", bufview)[0]
             logging.debug("received server hearbeat (%s)", retnum)
         else:
             logging.warning("response not from server (%r, %s:%s)",
-                    buf[0:length], *address)
+                            buf[0:length], *address)
     finally:
         sock.close()
     return retnum
@@ -847,17 +839,18 @@ def login(cfg):
         mac = get_address(cfg["interface"], AF_ETHERNET, cfg["ifaddrs"])
     except ValueError as val_e:
         error("login", "no MAC address information for interface (%s)" % val_e,
-                exitcode=4)
+              exitcode=4)
     try:
         localip = get_address(cfg["interface"], socket.AF_INET, cfg["ifaddrs"])
     except ValueError as val_e:
-        error("login", "no IPv4 address information for interface (%s)" % \
-                val_e, exitcode=4)
+        error("login",
+              "no IPv4 address information for interface (%s)" % val_e,
+              exitcode=4)
     cfg["ipinuse"] = localip
     login_data = {"username": cfg["username"],
-        "drop": "0",
-        "type": "2",
-        "n": "100"}
+                  "drop": "0",
+                  "type": "2",
+                  "n": "100"}
     offset = 0
     n_attempt = 0
     max_attempt = 3
@@ -946,16 +939,15 @@ def logout(cfg):
     try:
         uid = read_uid(expanduser(cfg["uidfile"]))
     except IOError as io_e:
-        error("logout", "can't read from UID file (%s)" % io_e,
-                exitcode=4)
+        error("logout", "can't read from UID file (%s)" % io_e, exitcode=4)
     except ValueError as val_e:  # read_uid() reads non-uid
-        error("logout", "%s" % val_e,
-                exitcode=2)
+        error("logout", "%s" % val_e, exitcode=2)
     try:
         localip = get_address(cfg["interface"], socket.AF_INET, cfg["ifaddrs"])
     except ValueError as val_e:
-        error("login", "no IPv4 address information for interface (%s)" % \
-                val_e, exitcode=4)
+        error("login",
+              "no IPv4 address information for interface (%s)" % val_e,
+              exitcode=4)
     url = "http://%s:%s/cgi-bin/do_logout" % (cfg["address"], cfg["port"])
     logout_data = {"uid": uid}
     logout_postdata = urlencode(logout_data)
@@ -972,7 +964,7 @@ def kick(cfg):
     """Kick all users using the account."""
     url = "http://%s:%s/cgi-bin/force_logout" % (cfg["address"], cfg["port"])
     kick_data = {"username": cfg["username"],
-            "password": cfg["password"]}
+                 "password": cfg["password"]}
     kick_postdata = urlencode(kick_data)
     msg = communicate_to_server(url, kick_postdata, "kick")
     stext = msg.strip()
@@ -1002,7 +994,7 @@ def error(prefix, txt, server=False, exitp=True, exitcode=2):
     if server:
         if txt in ERRMSG:
             msg = "Error: %s: server indicates error: %s" % (prefix,
-                    ERRMSG[txt])
+                                                             ERRMSG[txt])
             exitcode = 1
         else:
             msg = "Error: %s: unknown server error (%s)" % (prefix, txt)
@@ -1032,19 +1024,20 @@ def show_usage(fail=True):
 
     """
     stream = sys.stderr if fail else sys.stdout
-    msglist = ["Usage: pysrun [Options] {login|logout|kick}",
-            "Options:",
-            "  -c FILE       path to configuration file",
-            "  -I            propmt interactively for password",
-            "  -u USERNAME   account username",
-            "  -p PASSWORD   account password",
-            "  -a ADDRESS    address of authentication server",
-            "  -P PORT       authentication server listening port",
-            "  -i INTERFACE  network interface used for MAC address retrieval",
-            "  -s FILE       path to session UID storage file",
-            "  -d            show debug output and log debug messages",
-            "  -l FILE       path to log file",
-            "  -h            display this message and exit"]
+    msglist = [
+        "Usage: pysrun [Options] {login|logout|kick}",
+        "Options:",
+        "  -c FILE       path to configuration file",
+        "  -I            propmt interactively for password",
+        "  -u USERNAME   account username",
+        "  -p PASSWORD   account password",
+        "  -a ADDRESS    address of authentication server",
+        "  -P PORT       authentication server listening port",
+        "  -i INTERFACE  network interface used for MAC address retrieval",
+        "  -s FILE       path to session UID storage file",
+        "  -d            show debug output and log debug messages",
+        "  -l FILE       path to log file",
+        "  -h            display this message and exit"]
     print >> stream, "\n".join(msglist)
     if fail:
         sys.exit(2)
@@ -1108,8 +1101,8 @@ def validate_for_main():
 
     # Determine the operation from cmdline, fail if none find.
     operation_table = {"login": (login, post_login_hook),
-            "logout": (logout, None),
-            "kick": (kick, None)}
+                       "logout": (logout, None),
+                       "kick": (kick, None)}
     valid_oprs = operation_table.viewkeys() & args
     if len(valid_oprs) != 1:  # One and only one operation allowed.
         show_usage(fail=True)
@@ -1121,8 +1114,9 @@ def validate_for_main():
     try:
         config_from_file = read_config_file(config_path, warn=("-d" in opdict))
     except IOError as io_e:
-        error("config", "can't read configuration file (%s)" % io_e,
-                exitcode=4)
+        error("config",
+              "can't read configuration file (%s)" % io_e,
+              exitcode=4)
 
     # Overriding priorities: command-line > config file > defaults.
     CONFIG.update(config_from_file)
@@ -1135,19 +1129,21 @@ def validate_for_main():
     # Validation of config and its values.
     # Not needed after Python 2.7.4, but we fail as early as possible...
     if not isvalidport(CONFIG["port"]):
-        error("config", "invalid port number (%s)" % CONFIG["port"],
-                exitcode=2)
+        error("config",
+              "invalid port number (%s)" % CONFIG["port"],
+              exitcode=2)
 
     # Kicking can use whatever connection available, but log-in/-out
     # requires address matching (XXX: not tested yet)
     required_keys = {"login": ["username", "password", "interface"],
-            "logout": ["uidfile", "interface"],
-            "kick": ["username", "password"]}
+                     "logout": ["uidfile", "interface"],
+                     "kick": ["username", "password"]}
     if not have(required_keys[the_opr], CONFIG):
         error("config", "operation \"%s\" requires the option%s %s" %
-                (the_opr, "s" if len(required_keys[the_opr]) > 1 else "",
-                    human_enum(required_keys[the_opr])),
-                exitcode=2)
+              (the_opr,
+               "s" if len(required_keys[the_opr]) > 1 else "",
+               human_enum(required_keys[the_opr])),
+              exitcode=2)
 
     # All operations needs to know the current network status
     CONFIG["ifaddrs"] = getaddrs()
